@@ -34,19 +34,27 @@ export const missingConfig: string[] = [
     .map(([k]) => k),
 ]
 
-export const firebaseReady = missingConfig.length === 0
-
 let app: FirebaseApp | null = null
 let auth: Auth | null = null
 let db: Firestore | null = null
 
-if (firebaseReady) {
-  app = initializeApp(config)
-  auth = getAuth(app)
-  auth.languageCode = 'ko'
-  // 메모리 캐시만 사용: 로그아웃 후 기기(IndexedDB)에 자산 데이터가 남지 않도록 디스크 캐시를 쓰지 않습니다.
-  db = initializeFirestore(app, { localCache: memoryLocalCache() })
+/** 초기화 실패 시 오류 메시지 (화면에 안내 표시용) */
+export let firebaseInitError: string | null = null
+
+if (missingConfig.length === 0) {
+  try {
+    app = initializeApp(config)
+    auth = getAuth(app)
+    auth.languageCode = 'ko'
+    // 메모리 캐시만 사용: 로그아웃 후 기기(IndexedDB)에 자산 데이터가 남지 않도록 디스크 캐시를 쓰지 않습니다.
+    db = initializeFirestore(app, { localCache: memoryLocalCache() })
+  } catch (e) {
+    firebaseInitError = e instanceof Error ? e.message : String(e)
+    console.error('[BE RICH] Firebase 초기화 실패', e)
+  }
 }
+
+export const firebaseReady = missingConfig.length === 0 && !firebaseInitError
 
 export function getFirebase() {
   if (!app || !auth || !db) throw new Error('Firebase 설정이 없습니다. .env.local 파일을 확인하세요.')

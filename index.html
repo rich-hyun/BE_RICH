@@ -15,7 +15,25 @@
     </script>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- 앱이 시작되면 React가 이 내용을 대체합니다 -->
+      <div id="boot" style="min-height:100dvh;display:flex;align-items:center;justify-content:center;font-family:-apple-system,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;color:#6b7684;font-size:14px;padding:16px;text-align:center">
+        불러오는 중…
+      </div>
+    </div>
+    <noscript>이 웹사이트를 사용하려면 JavaScript를 켜 주세요.</noscript>
+    <script>
+      // JavaScript 번들을 불러오지 못하면(배포 설정 오류·네트워크 문제 등) 빈 화면 대신 안내를 표시합니다.
+      setTimeout(function () {
+        if (window.__beRichBooted) return;
+        var el = document.getElementById('boot');
+        if (!el) return;
+        el.innerHTML =
+          '<div style="max-width:420px;line-height:1.6"><b style="color:#191f28;font-size:16px">앱을 불러오지 못했습니다</b><br>' +
+          '새로고침해 보세요. 계속되면 GitHub 저장소 Settings → Pages → Source가 <b>GitHub Actions</b>로 되어 있는지, ' +
+          'Actions의 “Deploy to GitHub Pages” 배포가 성공했는지 확인해 주세요.</div>';
+      }, 8000);
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

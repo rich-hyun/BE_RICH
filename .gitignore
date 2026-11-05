@@ -28,6 +28,7 @@ dist-ssr
 .env.*
 .env.local
 !.env.example
+!.env.production
 # 관리자 UID가 치환된 배포용 규칙 파일
 firestore.rules.generated
 .firebaserc

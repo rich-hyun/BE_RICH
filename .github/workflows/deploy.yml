@@ -18,9 +18,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -32,34 +32,20 @@ jobs:
           npm run typecheck
           npm test
 
-      # Firebase "웹 클라이언트 설정"만 주입합니다. (브라우저에 공개되는 값)
-      # ⚠️ 비밀번호·서비스 계정 키 같은 진짜 비밀값은 절대 여기에 추가하지 마세요.
-      #    VITE_ 값은 빌드된 JavaScript에 그대로 포함되어 누구나 볼 수 있습니다.
-      - name: Check required settings
-        env:
-          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
-          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
-          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
-          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
-          VITE_ADMIN_UID: ${{ secrets.VITE_ADMIN_UID }}
-        run: |
-          missing=0
-          for v in VITE_FIREBASE_API_KEY VITE_FIREBASE_AUTH_DOMAIN VITE_FIREBASE_PROJECT_ID VITE_FIREBASE_APP_ID VITE_ADMIN_UID; do
-            if [ -z "${!v}" ]; then echo "::error::GitHub Secret '$v' 가 설정되지 않았습니다 (Settings → Secrets and variables → Actions)"; missing=1; fi
-          done
-          exit $missing
-
+      # Firebase 웹 클라이언트 설정(공개값)은 저장소의 .env.production 에서 읽습니다.
+      # 관리자 이메일만 GitHub Secret(VITE_ADMIN_EMAIL)으로 주입합니다. 없으면 로그인 화면에 이메일 칸이 표시됩니다.
+      # ⚠️ 비밀번호·서비스 계정 키 같은 진짜 비밀값은 절대 빌드에 주입하지 마세요 (빌드된 JS는 공개됩니다).
       - name: Build
         env:
-          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
-          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
-          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
-          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
-          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
-          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
           VITE_ADMIN_EMAIL: ${{ secrets.VITE_ADMIN_EMAIL }}
-          VITE_ADMIN_UID: ${{ secrets.VITE_ADMIN_UID }}
         run: npx vite build
+
+      - name: Verify build output
+        run: |
+          test -f dist/index.html
+          if grep -q 'src/main.tsx' dist/index.html; then echo "::error::dist/index.html 이 빌드되지 않은 원본입니다"; exit 1; fi
+          grep -q 'berich-7cdb2' dist/assets/*.js || { echo "::error::Firebase 설정이 빌드에 포함되지 않았습니다"; exit 1; }
+          echo "index.html asset references:"; grep -oE '(src|href)="[^"]*"' dist/index.html
 
       - name: Guard against leaked server secrets
         run: |
