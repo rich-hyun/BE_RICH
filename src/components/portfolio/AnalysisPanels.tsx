@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { AlertTriangle, Layers } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -12,7 +12,7 @@ import { useData } from '@/contexts/DataContext'
 import { useUi } from '@/contexts/UiContext'
 import { formatKRW, formatPct } from '@/lib/format'
 import type { PortfolioAnalysis, Slice } from '@/lib/portfolio'
-import { QUALITY_LABELS, UNCLASSIFIED } from '@/lib/types'
+import { QUALITY_LABELS, UNCLASSIFIED, isSemiIndustry } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 function colorFor(s: Slice, i: number) {
@@ -94,12 +94,12 @@ export function IndustryPanel({ a }: { a: PortfolioAnalysis }) {
       <Card>
         <CardHeader>
           <CardTitle>업종별 노출 (ETF 내부 구성 반영)</CardTitle>
-          <CardDescription>ETF 평가금액 × ETF 내 업종 비중으로 계산 · 업종은 서로 겹치지 않아 합계 100%</CardDescription>
+          <CardDescription>ETF는 구성비가 있으면 평가금액 × ETF 내 업종 비중, 없으면 직접 입력한 업종으로 계산 · 합계 100%</CardDescription>
         </CardHeader>
         <CardContent>
           {unclassifiedShare > 0.0001 && (
             <Notice tone="warning" className="mb-3">
-              전체의 {formatPct(unclassifiedShare, { digits: 1 })}({formatKRW(a.industryUnclassified, unit)})가 ‘분류 미확인’입니다. 업종을 지정하지 않은 주식이나 구성비가 등록되지 않은 ETF가 있어 정확한 업종 비중 계산이 불가능합니다.
+              전체의 {formatPct(unclassifiedShare, { digits: 1 })}({formatKRW(a.industryUnclassified, unit)})가 ‘분류 미확인’입니다. 업종을 입력하지 않은 종목(또는 구성비 업종 합계가 100% 미만인 ETF)이 있어 정확한 업종 비중 계산이 불가능합니다. 종목 수정에서 업종을 입력하세요.
             </Notice>
           )}
           <div style={{ height: Math.max(200, data.length * 34) }}>
@@ -123,7 +123,7 @@ export function IndustryPanel({ a }: { a: PortfolioAnalysis }) {
                 />
                 <Bar dataKey="pct" radius={[0, 4, 4, 0]} isAnimationActive={false} label={{ position: 'right', fontSize: 11, fill: 'var(--muted-foreground)', formatter: (v: unknown) => `${Number(v).toFixed(1)}%` }}>
                   {data.map((s, i) => (
-                    <Cell key={s.key} fill={s.key === UNCLASSIFIED ? 'var(--chart-8)' : s.key === '반도체' ? 'var(--chart-4)' : PALETTE[i % 7]} />
+                    <Cell key={s.key} fill={s.key === UNCLASSIFIED ? 'var(--chart-8)' : isSemiIndustry(s.key) ? 'var(--chart-4)' : PALETTE[i % 7]} />
                   ))}
                 </Bar>
               </BarChart>
@@ -131,8 +131,90 @@ export function IndustryPanel({ a }: { a: PortfolioAnalysis }) {
           </div>
         </CardContent>
       </Card>
+      <IndustryTable a={a} />
       <EtfStatusCard a={a} />
     </div>
+  )
+}
+
+const VIA_LABEL = { direct: '직접 입력', etf: 'ETF 구성비', default: '' } as const
+
+/** 업종별 전체 대비 % + 구성 종목 */
+function IndustryTable({ a }: { a: PortfolioAnalysis }) {
+  const [open, setOpen] = useState<string | null>(null)
+  const sum = a.industries.reduce((s, x) => s + x.share, 0)
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>업종별 비중 표</CardTitle>
+        <CardDescription>
+          전체 평가금액 <Money value={a.total} className="font-semibold text-foreground" /> 대비 각 업종 비율 · 행을 누르면 어떤 종목에서 왔는지 보여줍니다
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="overflow-x-auto">
+        <table className="w-full min-w-[420px] text-sm">
+          <thead className="text-xs text-muted-foreground">
+            <tr className="border-b">
+              <th className="py-2 text-left font-semibold">업종</th>
+              <th className="py-2 text-right font-semibold">금액</th>
+              <th className="py-2 text-right font-semibold">전체 대비</th>
+            </tr>
+          </thead>
+          <tbody>
+            {a.industries.map((s, i) => (
+              <Fragment key={s.key}>
+                <tr className="cursor-pointer border-b hover:bg-muted/50" onClick={() => setOpen(open === s.key ? null : s.key)} aria-expanded={open === s.key}>
+                  <td className="py-2.5">
+                    <span className="flex items-center gap-2">
+                      <span className="size-2.5 shrink-0 rounded-full" style={{ background: s.key === UNCLASSIFIED ? 'var(--chart-8)' : isSemiIndustry(s.key) ? 'var(--chart-4)' : PALETTE[i % 7] }} />
+                      <span className={s.key === UNCLASSIFIED ? 'text-muted-foreground' : 'font-semibold'}>{s.name}</span>
+                      <span className="text-[11px] text-muted-foreground">{s.sources.length}개 종목</span>
+                    </span>
+                  </td>
+                  <td className="py-2.5 text-right">
+                    <Money value={s.value} />
+                  </td>
+                  <td className="py-2.5 text-right">
+                    <span className="inline-flex items-center gap-2">
+                      <span className="hidden h-1.5 w-20 overflow-hidden rounded-full bg-muted sm:inline-block">
+                        <span className="block h-full rounded-full bg-primary" style={{ width: `${Math.min(100, s.share * 100)}%` }} />
+                      </span>
+                      <Pct value={s.share} digits={1} className="w-14 font-bold" />
+                    </span>
+                  </td>
+                </tr>
+                {open === s.key &&
+                  s.sources.map((src) => (
+                    <tr key={src.label} className="border-b bg-muted/30 text-xs">
+                      <td className="py-1.5 pl-7">
+                        {src.label}
+                        {VIA_LABEL[src.via] && <span className="ml-1.5 text-muted-foreground">· {VIA_LABEL[src.via]}</span>}
+                      </td>
+                      <td className="py-1.5 text-right">
+                        <Money value={src.value} />
+                      </td>
+                      <td className="py-1.5 text-right text-muted-foreground">
+                        <Pct value={a.total ? src.value / a.total : 0} digits={1} />
+                      </td>
+                    </tr>
+                  ))}
+              </Fragment>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="text-xs text-muted-foreground">
+              <td className="pt-2">합계</td>
+              <td className="pt-2 text-right">
+                <Money value={a.total} />
+              </td>
+              <td className="pt-2 text-right font-semibold">
+                <Pct value={sum} digits={1} />
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </CardContent>
+    </Card>
   )
 }
 
@@ -218,8 +300,8 @@ export function ThemePanel({ a }: { a: PortfolioAnalysis }) {
         이 영역은 <b>테마 분석</b>으로, 위 업종 분석(합계 100%)과 별개입니다. 한 기업이 여러 테마에 동시에 속할 수 있으므로 테마 비중끼리 더하면 안 됩니다.
       </Notice>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Meter label="국내 반도체 직접투자" value={t.semiconductorDirectKR} share={s(t.semiconductorDirectKR)} tone="semi" desc="업종이 ‘반도체’인 한국 개별주식(예: SK하이닉스, 삼성전자) 합계" />
-        <Meter label="전체 반도체 노출 (ETF 포함)" value={t.semiconductorTotal} share={s(t.semiconductorTotal)} tone="semi" desc="직접 보유 + ETF 내부 ‘반도체’ 업종 비중 합산. 구성비 미등록 ETF는 제외" />
+        <Meter label="국내 반도체 직접투자" value={t.semiconductorDirectKR} share={s(t.semiconductorDirectKR)} tone="semi" desc="업종 이름에 ‘반도체’가 들어간 한국 개별주식(예: SK하이닉스, 삼성전자) 합계" />
+        <Meter label="전체 반도체 노출 (ETF 포함)" value={t.semiconductorTotal} share={s(t.semiconductorTotal)} tone="semi" desc="업종 이름에 ‘반도체’가 들어간 직접 보유 + ETF 내부 비중 합산 (구성비 없는 ETF는 직접 입력한 업종 기준)" />
         <Meter label="AI 테마 노출 (확인된 범위)" value={t.aiTheme} share={s(t.aiTheme)} tone="ai" desc="AI 태그 개별주식 + ETF 구성종목 중 AI 태그 종목. 입력된 구성종목만 반영한 최소값" />
         <Meter label="미국 빅테크 노출 (확인된 범위)" value={t.bigTech} share={s(t.bigTech)} tone="tech" desc="AAPL·MSFT·NVDA·AMZN·GOOGL·META·TSLA·AVGO 또는 ‘미국 빅테크’ 태그. 입력된 구성종목 기준 최소값" />
       </div>

@@ -6,7 +6,7 @@ import { Input, Select } from '@/components/ui/input'
 import { Field, Notice, Spinner } from '@/components/ui/misc'
 import { useData, firestoreErrorMessage } from '@/contexts/DataContext'
 import { useUi } from '@/contexts/UiContext'
-import { INDUSTRIES, QUALITY_LABELS, THEMES, type CompositionQuality, type EtfComposition, type Industry, type Theme } from '@/lib/types'
+import { INDUSTRIES, MAX_INDUSTRY_LEN, QUALITY_LABELS, THEMES, UNCLASSIFIED, type CompositionQuality, type EtfComposition, type Industry, type Theme } from '@/lib/types'
 import { COMPOSITION_TEMPLATES } from '@/lib/samples'
 import { isValidISODate, todayKST } from '@/lib/date'
 import { normSymbol } from '@/lib/portfolio'
@@ -16,8 +16,13 @@ interface Row {
   name: string
   symbol: string
   weight: string
-  industry: Industry | ''
+  industry: Industry
   themes: Theme[]
+}
+
+interface IndRow {
+  name: string
+  pct: string
 }
 
 interface Form {
@@ -26,7 +31,7 @@ interface Form {
   asOfDate: string
   source: string
   quality: CompositionQuality
-  industries: Record<string, string>
+  industries: IndRow[]
   rows: Row[]
 }
 
@@ -36,7 +41,7 @@ const emptyForm = (symbol = '', name = ''): Form => ({
   asOfDate: todayKST(),
   source: '',
   quality: 'manual',
-  industries: {},
+  industries: [{ name: '', pct: '' }],
   rows: [],
 })
 
@@ -46,7 +51,7 @@ const fromComp = (c: EtfComposition): Form => ({
   asOfDate: c.asOfDate,
   source: c.source,
   quality: c.quality,
-  industries: Object.fromEntries(Object.entries(c.industries).map(([k, v]) => [k, String(v)])),
+  industries: Object.entries(c.industries).map(([name, v]) => ({ name, pct: String(v) })),
   rows: c.holdings.map((h) => ({ name: h.name, symbol: h.symbol, weight: String(h.weight), industry: h.industry ?? '', themes: h.themes })),
 })
 
@@ -78,13 +83,14 @@ export function CompositionDialog({
     }
   }
 
-  const indSum = INDUSTRIES.reduce((s, i) => s + (Number.isFinite(num(f.industries[i] ?? '')) ? num(f.industries[i] ?? '') : 0), 0)
+  const indSum = f.industries.reduce((s, r) => s + (Number.isFinite(num(r.pct)) ? num(r.pct) : 0), 0)
+  const setInd = (i: number, patch: Partial<IndRow>) => setF((s) => ({ ...s, industries: s.industries.map((r, j) => (j === i ? { ...r, ...patch } : r)) }))
   const conSum = f.rows.reduce((s, r) => s + (Number.isFinite(num(r.weight)) ? num(r.weight) : 0), 0)
 
   const applyTemplate = async (k: string) => {
     const t = COMPOSITION_TEMPLATES.find((x) => x.key === k)
     if (!t) return
-    if (f.rows.length || Object.keys(f.industries).length) {
+    if (f.rows.length || f.industries.some((r) => r.name || r.pct)) {
       if (!(await confirm({ title: '템플릿으로 덮어쓸까요?', description: '입력 중인 업종 비중과 구성종목이 템플릿 값으로 바뀝니다.' }))) return
     }
     setF((s) => ({
@@ -92,7 +98,7 @@ export function CompositionDialog({
       name: s.name || t.name,
       source: t.source,
       quality: 'sample',
-      industries: Object.fromEntries(Object.entries(t.industries).map(([a, b]) => [a, String(b)])),
+      industries: Object.entries(t.industries).map(([name, b]) => ({ name, pct: String(b) })),
       rows: t.holdings.map((h) => ({ name: h.name, symbol: h.symbol, weight: String(h.weight), industry: h.industry ?? '', themes: h.themes })),
     }))
   }
@@ -106,10 +112,17 @@ export function CompositionDialog({
     if (!sym) e.push('ETF 종목코드를 입력하세요.')
     if (!isValidISODate(f.asOfDate)) e.push('구성비 기준일을 입력하세요.')
     if (!f.source.trim()) e.push('출처를 입력하세요. (예: 운용사 홈페이지 PDF, 2026-10-31 기준)')
-    for (const i of INDUSTRIES) {
-      const v = num(f.industries[i] ?? '')
-      if (!Number.isFinite(v) || v < 0 || v > 100) e.push(`업종 ‘${i}’ 비중은 0~100 사이여야 합니다.`)
-    }
+    const seen = new Set<string>()
+    f.industries.forEach((r, idx) => {
+      const name = r.name.trim()
+      if (!name && !r.pct.trim()) return
+      const v = num(r.pct)
+      if (!name) e.push(`업종 ${idx + 1}행: 업종 이름을 입력하세요.`)
+      else if (name === UNCLASSIFIED) e.push(`‘${UNCLASSIFIED}’는 업종 이름으로 쓸 수 없습니다. 비워 두면 자동으로 계산됩니다.`)
+      else if (seen.has(name)) e.push(`업종 ‘${name}’이(가) 두 번 입력되었습니다. 한 줄로 합쳐 주세요.`)
+      if (!Number.isFinite(v) || v <= 0 || v > 100) e.push(`업종 ‘${name || idx + 1}’ 비중은 0보다 크고 100 이하여야 합니다.`)
+      seen.add(name)
+    })
     if (indSum > 100.0001) e.push(`업종 비중 합계가 100%를 넘습니다 (${indSum.toFixed(2)}%). 업종은 서로 겹치지 않게 입력하세요.`)
     f.rows.forEach((r, idx) => {
       const w = num(r.weight)
@@ -123,10 +136,10 @@ export function CompositionDialog({
     if (e.length) return
     setSaving(true)
     try {
-      const industries: Partial<Record<Industry, number>> = {}
-      for (const i of INDUSTRIES) {
-        const v = num(f.industries[i] ?? '')
-        if (v > 0) industries[i] = v
+      const industries: Record<string, number> = {}
+      for (const r of f.industries) {
+        const name = r.name.trim().slice(0, MAX_INDUSTRY_LEN)
+        if (name && num(r.pct) > 0) industries[name] = num(r.pct)
       }
       await saveComposition({
         id: editing?.id,
@@ -136,7 +149,7 @@ export function CompositionDialog({
         source: f.source.trim(),
         quality: f.quality,
         industries,
-        holdings: f.rows.map((r) => ({ name: r.name.trim(), symbol: r.symbol.trim().toUpperCase(), weight: num(r.weight), industry: r.industry || null, themes: r.themes })),
+        holdings: f.rows.map((r) => ({ name: r.name.trim(), symbol: r.symbol.trim().toUpperCase(), weight: num(r.weight), industry: r.industry.trim() || null, themes: r.themes })),
       })
       toast('ETF 구성비를 저장했습니다.')
       onOpenChange(false)
@@ -199,13 +212,31 @@ export function CompositionDialog({
               합계 {indSum.toFixed(2)}% · 미입력 {Math.max(0, 100 - indSum).toFixed(2)}%는 ‘분류 미확인’
             </span>
           </div>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
-            {INDUSTRIES.map((i) => (
-              <Field key={i} label={i}>
-                <Input inputMode="decimal" className="h-9 text-right tabular" value={f.industries[i] ?? ''} onChange={(e) => setF({ ...f, industries: { ...f.industries, [i]: e.target.value.replace(/[^\d.]/g, '') } })} />
-              </Field>
+          <p className="mb-2 text-[11px] text-muted-foreground">
+            업종 이름은 자유롭게 입력하세요 (예: 반도체, 소프트웨어, 2차전지). 이름에 ‘반도체’가 들어가면 반도체 노출에 합산됩니다.
+          </p>
+          <div className="flex flex-col gap-2">
+            {f.industries.map((r, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <Input className="h-9 flex-1" placeholder="업종 이름" maxLength={MAX_INDUSTRY_LEN} list="industry-suggestions" value={r.name} onChange={(e) => setInd(i, { name: e.target.value })} />
+                <div className="relative w-28">
+                  <Input inputMode="decimal" className="h-9 pr-7 text-right tabular" placeholder="0" value={r.pct} onChange={(e) => setInd(i, { pct: e.target.value.replace(/[^\d.]/g, '') })} />
+                  <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">%</span>
+                </div>
+                <Button variant="ghost" size="icon" aria-label="업종 삭제" onClick={() => setF({ ...f, industries: f.industries.filter((_, j) => j !== i) })}>
+                  <Trash2 />
+                </Button>
+              </div>
             ))}
           </div>
+          <Button variant="outline" size="sm" className="mt-2" onClick={() => setF({ ...f, industries: [...f.industries, { name: '', pct: '' }] })}>
+            <Plus /> 업종 추가
+          </Button>
+          <datalist id="industry-suggestions">
+            {INDUSTRIES.map((x) => (
+              <option key={x} value={x} />
+            ))}
+          </datalist>
         </div>
 
         <div>
@@ -238,14 +269,7 @@ export function CompositionDialog({
                       <Input className="h-8 w-20 text-right text-xs" inputMode="decimal" value={r.weight} onChange={(e) => setRow(i, { weight: e.target.value.replace(/[^\d.]/g, '') })} />
                     </td>
                     <td className="p-1.5">
-                      <Select className="h-8 text-xs" value={r.industry} onChange={(e) => setRow(i, { industry: e.target.value as Industry | '' })}>
-                        <option value="">-</option>
-                        {INDUSTRIES.map((x) => (
-                          <option key={x} value={x}>
-                            {x}
-                          </option>
-                        ))}
-                      </Select>
+                      <Input className="h-8 w-32 text-xs" placeholder="업종" maxLength={MAX_INDUSTRY_LEN} list="industry-suggestions" value={r.industry} onChange={(e) => setRow(i, { industry: e.target.value })} />
                     </td>
                     <td className="p-1.5">
                       <div className="flex gap-2 whitespace-nowrap">

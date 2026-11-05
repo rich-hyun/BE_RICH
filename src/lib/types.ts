@@ -49,7 +49,11 @@ export const isEtfType = (t: HoldingAssetType) => t === 'equityEtf' || t === 'bo
 export const COUNTRIES = ['한국', '미국', '기타'] as const
 export type Country = (typeof COUNTRIES)[number]
 
-/** 업종 분류(상호 배타적, 합계 100% 이내). 반도체·AI '테마'는 별도로 분석합니다. */
+/**
+ * 업종은 사용자가 직접 입력합니다(자유 입력). 아래는 입력 추천용 기본 목록입니다.
+ * 한 종목(또는 ETF 내 비중)은 하나의 업종에만 속하므로 업종 합계는 100%를 넘지 않습니다.
+ * 반도체·AI '테마'는 별도로 분석합니다.
+ */
 export const INDUSTRIES = [
   '반도체',
   '소프트웨어',
@@ -64,7 +68,10 @@ export const INDUSTRIES = [
   '부동산',
   '기타',
 ] as const
-export type Industry = (typeof INDUSTRIES)[number]
+export type Industry = string
+export const MAX_INDUSTRY_LEN = 30
+/** '반도체', '반도체 장비'처럼 이름에 '반도체'가 들어간 업종은 반도체 노출로 집계 */
+export const isSemiIndustry = (name: string | null | undefined) => !!name && name.includes('반도체')
 export const UNCLASSIFIED = '분류 미확인'
 
 /** 업종과 독립적인 테마 태그 (중복 가능, 합계 개념 없음) */
@@ -83,7 +90,7 @@ export interface Holding {
   marketValue: number // 평가금액(원, 정수)
   costBasis: number | null // 매입금액
   quantity: number | null
-  industry: Industry | null // 개별주식 업종
+  industry: Industry | null // 직접 지정 업종 (ETF는 구성비가 없을 때만 사용)
   themes: Theme[] // 개별주식 테마
   memo: string
   isSample?: boolean // 예시 데이터 표시용
@@ -115,7 +122,7 @@ export interface EtfComposition {
   asOfDate: string // 구성비 기준일
   source: string // 출처 (운용사 홈페이지 등)
   quality: CompositionQuality
-  industries: Partial<Record<Industry, number>> // %
+  industries: Record<string, number> // 업종명 → ETF 내 비중 %
   holdings: EtfConstituent[] // 주요 구성종목 (일부만 있어도 됨)
   updatedAt?: number
 }

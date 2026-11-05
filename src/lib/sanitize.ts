@@ -3,7 +3,8 @@ import {
   ASSET_KEYS,
   COUNTRIES,
   DEFAULT_SETTINGS,
-  INDUSTRIES,
+  MAX_INDUSTRY_LEN,
+  UNCLASSIFIED,
   THEMES,
   type AccountType,
   type AssetRecord,
@@ -30,7 +31,11 @@ const ts = (v: unknown): number | undefined => {
     return (v as { toMillis: () => number }).toMillis()
   return undefined
 }
-const industry = (v: unknown): Industry | null => ((INDUSTRIES as readonly string[]).includes(v as string) ? (v as Industry) : null)
+const industry = (v: unknown): Industry | null => {
+  if (typeof v !== 'string') return null
+  const x = v.trim().slice(0, MAX_INDUSTRY_LEN)
+  return x && x !== UNCLASSIFIED ? x : null
+}
 const themes = (v: unknown): Theme[] => (Array.isArray(v) ? v.filter((t): t is Theme => (THEMES as readonly string[]).includes(t)) : [])
 
 export function toAssetRecord(id: string, d: Raw): AssetRecord | null {
@@ -72,7 +77,7 @@ const QUALITIES: CompositionQuality[] = ['official', 'manual', 'estimate', 'samp
 export function toComposition(id: string, d: Raw): EtfComposition | null {
   const symbol = str(d.symbol)
   if (!symbol) return null
-  const inds: Partial<Record<Industry, number>> = {}
+  const inds: Record<string, number> = {}
   if (d.industries && typeof d.industries === 'object') {
     for (const [k, v] of Object.entries(d.industries as Raw)) {
       const ind = industry(k)

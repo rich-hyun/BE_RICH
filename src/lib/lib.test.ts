@@ -165,6 +165,23 @@ describe('portfolio', () => {
     expect(a.byHolding[0].value).toBe(600) // 같은 ETF 계좌 합산
     expect(a.warnings.length).toBeGreaterThan(0)
   })
+  it('user-written industries: custom names, ETF direct industry fallback, % of total', () => {
+    const hs = [
+      H({ name: 'A', symbol: 'A1', marketValue: 300, industry: '2차전지' }),
+      H({ name: 'B', symbol: 'B1', marketValue: 100, industry: '반도체 장비' }),
+      H({ name: 'ETF', symbol: 'NOCOMP', assetType: 'equityEtf', country: '미국', marketValue: 500, industry: '미국 대형주' }),
+      H({ name: 'ETF2', symbol: 'NDXETF', assetType: 'equityEtf', country: '미국', marketValue: 100, industry: '무시됨' }),
+    ]
+    const a = analyzePortfolio(hs, [comp], DEFAULT_SETTINGS.riskThresholds)
+    const share = Object.fromEntries(a.industries.map((s) => [s.key, s.share]))
+    expect(share['2차전지']).toBeCloseTo(0.3)
+    expect(share['미국 대형주']).toBeCloseTo(0.5) // 구성비 없는 ETF → 직접 입력 업종
+    expect(share['무시됨']).toBeUndefined() // 구성비 있는 ETF는 구성비 우선
+    expect(share['소프트웨어']).toBeCloseTo(0.05)
+    expect(a.industries.reduce((s, x) => s + x.share, 0)).toBeCloseTo(1)
+    expect(a.themes.semiconductorTotal).toBeCloseTo(100 + 30) // '반도체 장비' + ETF 내 반도체 30%
+    expect(a.industries.find((s) => s.key === '2차전지')!.sources[0].label).toContain('A')
+  })
   it('composition version by snapshot date', () => {
     const older = { ...comp, id: 'old', asOfDate: '2026-01-01' }
     expect(findComposition('NDXETF', [comp, older], '2026-06-01')?.composition.id).toBe('old')

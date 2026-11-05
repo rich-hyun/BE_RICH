@@ -7,16 +7,17 @@ import { Money, Pct } from '@/components/Money'
 import { axisProps, gridProps, PALETTE } from '@/components/charts'
 import { useData } from '@/contexts/DataContext'
 import { analyzePortfolio, snapshotTrend } from '@/lib/portfolio'
-import { INDUSTRIES, UNCLASSIFIED, type Holding } from '@/lib/types'
+import { UNCLASSIFIED, isSemiIndustry, type Holding } from '@/lib/types'
 import { formatKDate, formatKMonth, shortMonth } from '@/lib/date'
 import { formatPct } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
-const IND_KEYS = [...INDUSTRIES, UNCLASSIFIED]
 
 export function HistoryPanel({ current, previous }: { current: { date: string; holdings: Holding[] }; previous: { date: string; holdings: Holding[] } | null }) {
   const { holdings, compositions, settings } = useData()
   const trend = useMemo(() => snapshotTrend(holdings, compositions, settings.riskThresholds), [holdings, compositions, settings.riskThresholds])
+  // 사용자가 입력한 업종 이름들 (분류 미확인은 맨 뒤)
+  const IND_KEYS = [...new Set(trend.flatMap((t) => Object.keys(t.industries)))].sort((a, b) => (a === UNCLASSIFIED ? 1 : b === UNCLASSIFIED ? -1 : 0))
   const trendData = trend.map((t) => ({
     month: t.month,
     date: t.date,
@@ -110,7 +111,7 @@ export function HistoryPanel({ current, previous }: { current: { date: string; h
                 />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
                 {usedInds.map((k, i) => (
-                  <Bar key={k} dataKey={k} stackId="a" fill={k === UNCLASSIFIED ? 'var(--chart-8)' : k === '반도체' ? 'var(--chart-4)' : PALETTE[i % 7]} isAnimationActive={false} />
+                  <Bar key={k} dataKey={k} stackId="a" fill={k === UNCLASSIFIED ? 'var(--chart-8)' : isSemiIndustry(k) ? 'var(--chart-4)' : PALETTE[i % 7]} isAnimationActive={false} />
                 ))}
               </BarChart>
             </ResponsiveContainer>
@@ -119,7 +120,7 @@ export function HistoryPanel({ current, previous }: { current: { date: string; h
         <Card>
           <CardHeader>
             <CardTitle>월별 반도체 노출 비중</CardTitle>
-            <CardDescription>직접 보유 + ETF 내부 반도체 업종 비중</CardDescription>
+            <CardDescription>업종 이름에 ‘반도체’가 들어간 비중 (직접 보유 + ETF 내부)</CardDescription>
           </CardHeader>
           <CardContent className="h-72">
             <ResponsiveContainer width="100%" height="100%">

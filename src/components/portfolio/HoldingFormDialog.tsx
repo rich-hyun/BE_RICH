@@ -11,13 +11,14 @@ import {
   COUNTRIES,
   HOLDING_TYPE_LABELS,
   INDUSTRIES,
+  MAX_INDUSTRY_LEN,
+  UNCLASSIFIED,
   THEMES,
   isEtfType,
   type AccountType,
   type Country,
   type Holding,
   type HoldingAssetType,
-  type Industry,
   type Theme,
 } from '@/lib/types'
 import { formatAmountInput, parseAmount } from '@/lib/format'
@@ -34,7 +35,7 @@ interface Form {
   marketValue: string
   costBasis: string
   quantity: string
-  industry: Industry | ''
+  industry: string
   themes: Theme[]
   memo: string
 }
@@ -66,6 +67,14 @@ export function HoldingFormDialog({
   snapshotDate: string
 }) {
   const { saveHolding, compositions, holdings } = useData()
+  // 기본 추천 + 이미 사용한 업종 이름 (같은 이름으로 입력하도록 도와 합산이 정확해짐)
+  const industrySuggestions = [
+    ...new Set([
+      ...holdings.map((h) => h.industry).filter((x): x is string => !!x),
+      ...compositions.flatMap((c) => Object.keys(c.industries)),
+      ...INDUSTRIES,
+    ]),
+  ]
   const { toast } = useUi()
   const [f, setF] = useState<Form>(() => fromHolding(editing, snapshotDate))
   const [err, setErr] = useState<Partial<Record<keyof Form, string>>>({})
@@ -96,6 +105,7 @@ export function HoldingFormDialog({
     else if (Number.isNaN(mv) || mv < 0) e.marketValue = '0 이상의 금액을 입력하세요.'
     if (cb != null && (Number.isNaN(cb) || cb < 0)) e.costBasis = '0 이상의 금액을 입력하세요.'
     if (qty != null && (!Number.isFinite(qty) || qty < 0)) e.quantity = '0 이상의 숫자를 입력하세요.'
+    if (f.industry.trim() === UNCLASSIFIED) e.industry = `‘${UNCLASSIFIED}’는 업종 이름으로 쓸 수 없습니다. 비워 두세요.`
     if (f.symbol && !/^[A-Za-z0-9.\-_ ]{1,20}$/.test(f.symbol.trim())) e.symbol = '영문·숫자 20자 이내로 입력하세요.'
     setErr(e)
     if (Object.keys(e).length) return
@@ -112,7 +122,7 @@ export function HoldingFormDialog({
         marketValue: mv!,
         costBasis: cb,
         quantity: qty,
-        industry: etf ? null : f.industry || null,
+        industry: f.industry.trim() || null,
         themes: etf ? [] : f.themes,
         memo: f.memo.trim(),
         // 예시 데이터를 사용자가 수정해 저장하면 더 이상 예시로 표시하지 않음
@@ -201,18 +211,27 @@ export function HoldingFormDialog({
           <Field label="수량 (선택)" error={err.quantity}>
             <Input inputMode="decimal" value={f.quantity} onChange={(e) => set('quantity', e.target.value.replace(/[^\d.]/g, ''))} />
           </Field>
+          <Field
+            label="업종 (직접 입력)"
+            className="col-span-2"
+            error={err.industry}
+            hint={
+              etf
+                ? comp
+                  ? '이 ETF는 등록된 구성비의 업종 비중이 우선 적용됩니다. 여기 입력한 업종은 구성비가 없을 때만 쓰입니다.'
+                  : '구성비가 없으므로 ETF 평가금액 전체가 이 업종으로 집계됩니다. 비워 두면 ‘분류 미확인’.'
+                : '자유롭게 입력하세요. 같은 이름끼리 합산되어 전체 대비 %로 표시됩니다. 비워 두면 ‘분류 미확인’.'
+            }
+          >
+            <Input value={f.industry} onChange={(e) => set('industry', e.target.value)} maxLength={MAX_INDUSTRY_LEN} placeholder="예: 반도체, 2차전지, 미국 대형주" list="holding-industry-suggestions" />
+            <datalist id="holding-industry-suggestions">
+              {industrySuggestions.map((i) => (
+                <option key={i} value={i} />
+              ))}
+            </datalist>
+          </Field>
           {!etf ? (
             <>
-              <Field label="업종 (직접 지정)" className="col-span-2">
-                <Select value={f.industry} onChange={(e) => set('industry', e.target.value as Industry | '')}>
-                  <option value="">분류 미확인</option>
-                  {INDUSTRIES.map((i) => (
-                    <option key={i} value={i}>
-                      {i}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
               <div className="col-span-2 flex flex-col gap-1.5">
                 <span className="text-xs font-semibold text-muted-foreground">테마 (업종과 별도, 중복 선택 가능)</span>
                 <div className="flex flex-wrap gap-3">
@@ -231,7 +250,7 @@ export function HoldingFormDialog({
               </div>
             </>
           ) : (
-            <Notice className="col-span-2">ETF의 업종·테마는 종목명이 아니라 ‘ETF 구성비’ 탭에 등록한 내부 구성 비중으로 계산합니다.</Notice>
+            <Notice className="col-span-2">ETF 내부 업종 비중을 정확히 반영하려면 ‘ETF 구성비’ 탭에 구성비를 등록하세요. 테마(AI·빅테크)도 구성비의 구성종목 기준으로 계산합니다.</Notice>
           )}
           <Field label="메모 (선택)" className="col-span-2">
             <Input value={f.memo} onChange={(e) => set('memo', e.target.value)} />

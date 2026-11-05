@@ -2,7 +2,7 @@ import {
   ACCOUNT_LABELS,
   COUNTRIES,
   HOLDING_TYPE_LABELS,
-  INDUSTRIES,
+  isSemiIndustry,
   UNCLASSIFIED,
   isEtfType,
   type EtfComposition,
@@ -50,6 +50,11 @@ export interface Slice {
   share: number // 0~1
 }
 
+/** 업종별 비중 + 어떤 종목에서 왔는지 */
+export interface IndustrySlice extends Slice {
+  sources: { label: string; value: number; via: 'direct' | 'etf' | 'default' }[]
+}
+
 export interface CompanyExposure extends Slice {
   sources: { label: string; value: number }[]
 }
@@ -61,7 +66,7 @@ export interface PortfolioAnalysis {
   byAccount: Slice[]
   byCountry: Slice[]
   byAssetType: Slice[]
-  industries: Slice[] // UNCLASSIFIED 포함, 합계 100%
+  industries: IndustrySlice[] // UNCLASSIFIED 포함, 합계 100%
   industryUnclassified: number // 원
   etfStatus: {
     holding: Holding
@@ -71,7 +76,7 @@ export interface PortfolioAnalysis {
   }[]
   themes: {
     semiconductorDirectKR: number // 원
-    semiconductorTotal: number // 업종 '반도체' 합계(직접+ETF)
+    semiconductorTotal: number // 이름에 '반도체'가 들어간 업종 합계(직접+ETF)
     aiTheme: number // 확인된 범위(최소값)
     bigTech: number // 확인된 범위(최소값)
     lookThroughCoverage: number // ETF 평가금액 중 구성종목 데이터로 확인된 비율 0~1
@@ -111,6 +116,17 @@ export function analyzePortfolio(
   const byCountry = new Map<string, { name: string; value: number }>()
   const byType = new Map<string, { name: string; value: number }>()
   const industries = new Map<string, { name: string; value: number }>()
+  const indSources = new Map<string, Map<string, { value: number; via: 'direct' | 'etf' | 'default' }>>()
+  let semisTotal = 0
+  const addInd = (ind: string, value: number, label: string, via: 'direct' | 'etf' | 'default') => {
+    add(industries, ind, ind, value)
+    if (isSemiIndustry(ind)) semisTotal += value
+    const m = indSources.get(ind) ?? new Map()
+    const cur = m.get(label)
+    if (cur) cur.value += value
+    else m.set(label, { value, via })
+    indSources.set(ind, m)
+  }
   const companies = new Map<string, { name: string; value: number; sources: Map<string, number> }>()
   const etfStatus: PortfolioAnalysis['etfStatus'] = []
   let semisDirectKR = 0
@@ -145,17 +161,15 @@ export function analyzePortfolio(
       let conSum = 0
       if (match) {
         const comp = match.composition
-        for (const ind of INDUSTRIES) {
-          const w = comp.industries[ind] ?? 0
-          if (w > 0) {
-            add(industries, ind, ind, (v * w) / 100)
-            indSum += w
-          }
-        }
-        if (indSum > 100) indSum = 100 // 방어: 입력 검증에서 100% 초과를 막지만 혹시 모를 경우
-        const rest = 100 - indSum
-        if (rest > 1e-9) add(industries, UNCLASSIFIED, UNCLASSIFIED, (v * rest) / 100)
         const label = `${h.name} (${ACCOUNT_LABELS[h.accountType]})`
+        const entries = Object.entries(comp.industries).filter(([, w]) => (w ?? 0) > 0) as [string, number][]
+        const rawSum = entries.reduce((s, [, w]) => s + w, 0)
+        // 방어: 입력 검증에서 100% 초과를 막지만, 혹시 넘으면 비율대로 줄여 합계 100% 유지
+        const scale = rawSum > 100 ? 100 / rawSum : 1
+        for (const [ind, w] of entries) addInd(ind, (v * w * scale) / 100, label, 'etf')
+        indSum = Math.min(100, rawSum)
+        const rest = 100 - indSum
+        if (rest > 1e-9) addInd(UNCLASSIFIED, (v * rest) / 100, label, 'etf')
         for (const c of comp.holdings) {
           if (!(c.weight > 0)) continue
           const amt = (v * c.weight) / 100
@@ -167,16 +181,18 @@ export function analyzePortfolio(
         }
         conSum = Math.min(conSum, 100)
         etfCovered += (v * conSum) / 100
+      } else if (h.industry) {
+        // 구성비가 없으면 사용자가 직접 지정한 업종으로 ETF 전체를 분류
+        addInd(h.industry, v, `${h.name} (${ACCOUNT_LABELS[h.accountType]})`, 'direct')
       } else if (h.assetType === 'bondEtf' || h.assetType === 'goldProduct') {
-        add(industries, '기타', '기타', v)
+        addInd('기타', v, `${h.name} (${ACCOUNT_LABELS[h.accountType]})`, 'default')
       } else {
-        add(industries, UNCLASSIFIED, UNCLASSIFIED, v)
+        addInd(UNCLASSIFIED, v, `${h.name} (${ACCOUNT_LABELS[h.accountType]})`, 'default')
       }
       etfStatus.push({ holding: h, match, industryCoverage: indSum, constituentCoverage: conSum })
     } else {
-      const ind = h.industry ?? UNCLASSIFIED
-      add(industries, ind, ind, v)
-      if (h.industry === '반도체' && h.country === '한국' && h.assetType === 'stock') semisDirectKR += v
+      addInd(h.industry ?? UNCLASSIFIED, v, `${h.name} (${ACCOUNT_LABELS[h.accountType]})`, h.industry ? 'direct' : 'default')
+      if (isSemiIndustry(h.industry) && h.country === '한국' && h.assetType === 'stock') semisDirectKR += v
       if (h.assetType === 'stock') {
         addCompany(hk, h.name, v, '직접 보유')
         if (h.themes.includes('AI')) ai += v
@@ -196,7 +212,12 @@ export function analyzePortfolio(
     }))
     .sort((a, b) => b.value - a.value)
   const countrySlices = toSlices(byCountry, total)
-  const industrySlices = toSlices(industries, total)
+  const industrySlices: IndustrySlice[] = toSlices(industries, total).map((s) => ({
+    ...s,
+    sources: [...(indSources.get(s.key) ?? new Map()).entries()]
+      .map(([label, x]) => ({ label, value: x.value, via: x.via }))
+      .sort((a, b) => b.value - a.value),
+  }))
   const companySlices: CompanyExposure[] = [...companies.entries()]
     .map(([key, c]) => ({
       key,
@@ -230,7 +251,7 @@ export function analyzePortfolio(
     etfStatus,
     themes: {
       semiconductorDirectKR: semisDirectKR,
-      semiconductorTotal: industries.get('반도체')?.value ?? 0,
+      semiconductorTotal: semisTotal,
       aiTheme: ai,
       bigTech,
       lookThroughCoverage: etfValue > 0 ? etfCovered / etfValue : 1,
