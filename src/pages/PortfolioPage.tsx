@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { CopyPlus, Pencil, PieChart, Plus, Sparkles, Trash2 } from 'lucide-react'
+import { CopyPlus, Pencil, PieChart, Plus, Trash2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -17,7 +17,6 @@ import { useData, firestoreErrorMessage } from '@/contexts/DataContext'
 import { useUi } from '@/contexts/UiContext'
 import { analyzePortfolio, snapshotDates } from '@/lib/portfolio'
 import { ACCOUNT_LABELS, HOLDING_TYPE_LABELS, type AccountType, type Holding } from '@/lib/types'
-import { SAMPLE_HOLDINGS, SAMPLE_SNAPSHOT_DATE } from '@/lib/samples'
 import { formatKDate, isValidISODate, todayKST } from '@/lib/date'
 
 function NewSnapshotDialog({ open, onOpenChange, from, onCreated }: { open: boolean; onOpenChange: (o: boolean) => void; from: { date: string; holdings: Holding[] } | null; onCreated: (d: string) => void }) {
@@ -89,7 +88,7 @@ function NewSnapshotDialog({ open, onOpenChange, from, onCreated }: { open: bool
 }
 
 export default function PortfolioPage() {
-  const { holdings, compositions, settings, saveHoldings, deleteHoldings } = useData()
+  const { holdings, compositions, settings, deleteHoldings } = useData()
   const { confirm, toast } = useUi()
   const dates = useMemo(() => snapshotDates(holdings), [holdings])
   const [selected, setSelected] = useState<string | null>(null)
@@ -102,27 +101,7 @@ export default function PortfolioPage() {
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Holding | null>(null)
   const [snapOpen, setSnapOpen] = useState(false)
-  const [busy, setBusy] = useState(false)
   const hasSample = current.some((h) => h.isSample)
-
-  const loadSamples = async () => {
-    const ok = await confirm({
-      title: '예시 보유 종목을 불러올까요?',
-      description: `${formatKDate(SAMPLE_SNAPSHOT_DATE)} 기준 예시 6종목(합계 77,950,000원)을 스냅샷으로 추가합니다. ‘예시’로 표시되며, 월별 자산 기록에는 반영되지 않습니다. S&P500·나스닥100 ETF는 종목코드가 비어 있으니 실제 상품의 코드를 입력하세요.`,
-      confirmText: '불러오기',
-    })
-    if (!ok) return
-    setBusy(true)
-    try {
-      await saveHoldings(SAMPLE_HOLDINGS.map((h) => ({ ...h, themes: [...h.themes] })))
-      setSelected(SAMPLE_SNAPSHOT_DATE)
-      toast('예시 데이터를 불러왔습니다.')
-    } catch (e) {
-      toast(`실패: ${firestoreErrorMessage(e)}`, 'error')
-    } finally {
-      setBusy(false)
-    }
-  }
 
   const deleteSnapshot = async () => {
     const ok = await confirm({
@@ -187,12 +166,9 @@ export default function PortfolioPage() {
         <EmptyState
           icon={PieChart}
           title="보유 종목이 없습니다"
-          description="증권사 앱에서 확인한 종목별 평가금액을 입력하세요. 예시 데이터로 기능을 먼저 살펴볼 수도 있습니다."
+          description="증권사 앱에서 확인한 종목별 평가금액을 입력하세요. 여러 종목을 한 번에 넣으려면 상단 ‘백업·내보내기 → JSON 복원’을 사용할 수 있습니다."
           action={
             <div className="flex flex-wrap justify-center gap-2">
-              <Button variant="outline" onClick={loadSamples} disabled={busy}>
-                <Sparkles /> 예시 데이터 불러오기
-              </Button>
               <Button onClick={() => { setEditing(null); setFormOpen(true) }}>
                 <Plus /> 종목 추가
               </Button>
@@ -274,11 +250,6 @@ export default function PortfolioPage() {
                     </div>
                   )
                 })}
-              {holdings.length > 0 && !holdings.some((h) => h.isSample) && current.length === 0 && (
-                <Button variant="link" size="sm" onClick={loadSamples}>
-                  예시 데이터 불러오기
-                </Button>
-              )}
             </CardContent>
           </Card>
 
