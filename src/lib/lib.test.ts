@@ -5,7 +5,7 @@ import { addMonths, monthsBetween, parseFlexibleDate } from './date'
 import { formatAmountInput, formatKRW, parseAmount } from './format'
 import { parseAssetWorkbook } from './excel'
 import { analyzePortfolio, findComposition, normSymbol, reconcile } from './portfolio'
-import { buildBackup, parseBackup } from './backup'
+import { BACKUP_VERSION, assertNoSecrets, buildBackup, diffBackup, parseBackup, planRestore } from './backup'
 import { DEFAULT_SETTINGS, type AssetRecord, type EtfComposition, type Holding } from './types'
 
 // ※ 모든 테스트 데이터는 임의로 만든 가짜 값입니다.
@@ -196,13 +196,63 @@ describe('portfolio', () => {
 })
 
 describe('backup', () => {
-  it('round trips and rejects foreign files', () => {
-    const b = buildBackup({ assetRecords: [rec('2026-01-01', 5)], holdings: [], etfCompositions: [], goals: [{ id: 'g', targetYear: 2030, targetAmount: 3 }], settings: DEFAULT_SETTINGS })
-    const { data, skipped } = parseBackup(JSON.stringify(b))
+  const payload = () => ({
+    assetRecords: [rec('2026-01-01', 5)],
+    holdings: [],
+    etfCompositions: [],
+    goals: [{ id: 'g', targetYear: 2030, targetAmount: 3 }],
+    settings: DEFAULT_SETTINGS,
+    members: [{ username: 'chaewon', canEdit: false }],
+  })
+
+  it('round trips v2 with checksum and rejects foreign files', async () => {
+    const b = await buildBackup(payload())
+    expect(b.version).toBe(BACKUP_VERSION)
+    const { data, skipped, integrity } = await parseBackup(JSON.stringify(b, null, 2))
     expect(skipped).toBe(0)
+    expect(integrity).toBe('verified')
     expect(data.assetRecords[0].isa).toBe(5)
     expect(data.goals).toHaveLength(1)
-    expect(() => parseBackup('{"app":"other"}')).toThrow()
-    expect(() => parseBackup('not json')).toThrow()
+    expect(data.members).toEqual([{ username: 'chaewon', canEdit: false }])
+    await expect(parseBackup('{"app":"other"}')).rejects.toThrow()
+    await expect(parseBackup('not json')).rejects.toThrow()
+  })
+
+  it('detects tampering and future versions', async () => {
+    const b = await buildBackup(payload())
+    b.data.assetRecords[0].isa = 999
+    expect((await parseBackup(JSON.stringify(b))).integrity).toBe('mismatch')
+    await expect(parseBackup(JSON.stringify({ app: 'be-rich', version: 99 }))).rejects.toThrow(/최신/)
+  })
+
+  it('migrates an old v1 (flat) backup', async () => {
+    const v1 = { app: 'be-rich', version: 1, exportedAt: '2026-01-01T00:00:00Z', assetRecords: [rec('2026-01-01', 7)], holdings: [], etfCompositions: [], goals: [], settings: DEFAULT_SETTINGS }
+    const r = await parseBackup(JSON.stringify(v1))
+    expect(r.sourceVersion).toBe(1)
+    expect(r.data.assetRecords[0].isa).toBe(7)
+    expect(r.data.members).toEqual([])
+    expect(r.warnings.length).toBeGreaterThan(0)
+  })
+
+  it('never contains credentials', async () => {
+    const dirty = { ...payload(), members: [{ username: 'chaewon', canEdit: true, password: 'x', uid: 'abc' } as never] }
+    const text = JSON.stringify(await buildBackup(dirty))
+    expect(text).not.toMatch(/password|token|uid/i)
+    expect(() => assertNoSecrets({ a: { idToken: 'x' } })).toThrow()
+  })
+
+  it('diff separates new / identical / conflict and plans restore modes', async () => {
+    const incoming = { ...payload(), assetRecords: [rec('2026-01-01', 5), rec('2026-02-01', 9), rec('2026-03-01', 1)] }
+    const current = { assetRecords: [{ ...rec('2026-01-01', 5), updatedAt: 123 }, rec('2026-02-01', 1), rec('2025-12-01', 4)], holdings: [], etfCompositions: [], goals: [] }
+    const d = diffBackup({ ...incoming }, current)[0]
+    expect([d.newCount, d.identicalCount, d.conflictCount]).toEqual([1, 1, 1])
+    const keep = planRestore(incoming, current, 'merge-keep')
+    expect(keep.writes.filter((w) => w.collection === 'assetRecords').map((w) => w.item.id)).toEqual(['2026-03-01'])
+    expect(keep.kept).toBe(1)
+    const over = planRestore(incoming, current, 'merge-overwrite')
+    expect(over.writes.filter((w) => w.previous)).toHaveLength(1)
+    expect(over.deletes).toHaveLength(0)
+    const rep = planRestore(incoming, current, 'replace')
+    expect(rep.deletes.map((x) => x.previous.id)).toEqual(['2025-12-01'])
   })
 })

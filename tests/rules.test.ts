@@ -141,3 +141,44 @@ describe('관리자가 등록한 계정', () => {
     await denied(getDoc(doc(viewer, 'users', ADMIN, 'assetRecords', record.date)))
   })
 })
+
+describe('백업·변경 이력 (관리자 전용)', () => {
+  const hist = { collection: 'assetRecords', docId: '2026-04-27', action: 'update', label: '2026-04-27', data: { date: '2026-04-27', isa: 1 }, savedAt: 1700000000000 }
+  const EDITOR2 = 'editor-uid-654'
+  let editor2: Firestore
+  beforeAll(async () => {
+    editor2 = client(EDITOR2)
+    await setDoc(doc(admin, 'members', EDITOR2), { username: 'editor2', canEdit: true, createdAt: 1, updatedAt: 1 })
+  })
+  it('관리자: 이력 기록·조회·삭제 가능, 수정은 불가', async () => {
+    await setDoc(doc(admin, 'users', ADMIN, 'history', 'h1'), hist)
+    expect((await getDocs(collection(admin, 'users', ADMIN, 'history'))).size).toBeGreaterThan(0)
+    await denied(updateDoc(doc(admin, 'users', ADMIN, 'history', 'h1'), { label: 'changed' }))
+    await deleteDoc(doc(admin, 'users', ADMIN, 'history', 'h1'))
+  })
+  it('수정 권한 계정: 수정 시 이력 기록은 가능하지만 조회·삭제는 불가', async () => {
+    await setDoc(doc(editor2, 'users', ADMIN, 'history', 'h2'), hist)
+    await denied(getDoc(doc(editor2, 'users', ADMIN, 'history', 'h2')))
+    await denied(getDocs(collection(editor2, 'users', ADMIN, 'history')))
+    await denied(deleteDoc(doc(editor2, 'users', ADMIN, 'history', 'h2')))
+  })
+  it('조회 전용 계정·비로그인: 이력 접근 모두 거부', async () => {
+    await setDoc(doc(admin, 'members', VIEWER), { username: 'chaewon', canEdit: false, createdAt: 1, updatedAt: 1 })
+    await denied(getDocs(collection(viewer, 'users', ADMIN, 'history')))
+    await denied(setDoc(doc(viewer, 'users', ADMIN, 'history', 'h3'), hist))
+    await denied(getDocs(collection(anon, 'users', ADMIN, 'history')))
+  })
+  it('이력 형식 검증', async () => {
+    await denied(setDoc(doc(admin, 'users', ADMIN, 'history', 'b1'), { ...hist, collection: 'members' }))
+    await denied(setDoc(doc(admin, 'users', ADMIN, 'history', 'b2'), { ...hist, extra: 1 }))
+    await denied(setDoc(doc(admin, 'users', ADMIN, 'history', 'b3'), { ...hist, savedAt: 1.5 }))
+  })
+  it('백업 메타: 관리자만 읽기·쓰기', async () => {
+    await setDoc(doc(admin, 'users', ADMIN, 'meta', 'backup'), { lastBackupAt: 1700000000000 })
+    expect((await getDoc(doc(admin, 'users', ADMIN, 'meta', 'backup'))).data()?.lastBackupAt).toBe(1700000000000)
+    await denied(getDoc(doc(editor2, 'users', ADMIN, 'meta', 'backup')))
+    await denied(setDoc(doc(editor2, 'users', ADMIN, 'meta', 'backup'), { lastBackupAt: 1 }))
+    await denied(setDoc(doc(admin, 'users', ADMIN, 'meta', 'other'), { lastBackupAt: 1 }))
+    await denied(setDoc(doc(admin, 'users', ADMIN, 'meta', 'backup'), { lastBackupAt: 1, token: 'x' }))
+  })
+})
