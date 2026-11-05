@@ -1,0 +1,119 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --background: #f5f6f8;
+  --foreground: #191f28;
+  --card: #ffffff;
+  --card-foreground: #191f28;
+  --muted: #f2f4f6;
+  --muted-foreground: #6b7684;
+  --border: #e5e8eb;
+  --input: #d1d6db;
+  --primary: #3182f6;
+  --primary-foreground: #ffffff;
+  --secondary: #f2f4f6;
+  --secondary-foreground: #333d4b;
+  --accent: #e8f3ff;
+  --accent-foreground: #1b64da;
+  --destructive: #e5484d;
+  --destructive-foreground: #ffffff;
+  --ring: #3182f6;
+  /* 한국식 표기: 상승 빨강, 하락 파랑 */
+  --up: #e42939;
+  --down: #2272eb;
+  --radius: 0.9rem;
+  --chart-1: #3182f6;
+  --chart-2: #12b886;
+  --chart-3: #f59f00;
+  --chart-4: #e8590c;
+  --chart-5: #7048e8;
+  --chart-6: #0ca5b0;
+  --chart-7: #d6336c;
+  --chart-8: #868e96;
+  --chart-grid: #eceef1;
+}
+
+.dark {
+  --background: #101113;
+  --foreground: #e9ecef;
+  --card: #1a1b1f;
+  --card-foreground: #e9ecef;
+  --muted: #232429;
+  --muted-foreground: #9aa0a8;
+  --border: #2c2e33;
+  --input: #3a3d44;
+  --primary: #4c94f8;
+  --primary-foreground: #ffffff;
+  --secondary: #26282d;
+  --secondary-foreground: #e9ecef;
+  --accent: #1d2a3d;
+  --accent-foreground: #8ab8ff;
+  --destructive: #f2555a;
+  --destructive-foreground: #ffffff;
+  --ring: #4c94f8;
+  --up: #ff5c67;
+  --down: #5b9bff;
+  --chart-1: #4c94f8;
+  --chart-2: #20c997;
+  --chart-3: #fcc419;
+  --chart-4: #ff922b;
+  --chart-5: #9775fa;
+  --chart-6: #22b8cf;
+  --chart-7: #f06595;
+  --chart-8: #adb5bd;
+  --chart-grid: #2a2c31;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-ring: var(--ring);
+  --color-up: var(--up);
+  --color-down: var(--down);
+  --radius-sm: calc(var(--radius) - 6px);
+  --radius-md: calc(var(--radius) - 4px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-sans: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
+    "Malgun Gothic", "Segoe UI", sans-serif;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Recharts 포커스 테두리 제거 */
+.recharts-wrapper *:focus {
+  outline: none;
+}

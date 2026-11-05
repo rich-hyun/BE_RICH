@@ -1,0 +1,104 @@
+rules_version = '2';
+
+// ─────────────────────────────────────────────────────────────
+// BE RICH Firestore 보안 규칙 (템플릿)
+//
+// "ADMIN_UID" 는 실제 관리자 계정의 UID로 교체해야 합니다.
+//  - 방법 1: `npm run rules:build` → firestore.rules.generated 생성 후 `firebase deploy --only firestore:rules`
+//  - 방법 2: Firebase 콘솔 > Firestore > 규칙 탭에 이 내용을 붙여넣고 ADMIN_UID를 직접 교체 후 게시
+//
+// 원칙
+//  1) 로그인하지 않은 사용자: 읽기/쓰기 모두 거부
+//  2) 로그인했더라도 관리자 UID가 아니면 거부 (다른 Firebase 계정 차단)
+//  3) 경로의 {userId}와 로그인 UID가 같아야 함
+//  4) 아래에 명시하지 않은 모든 경로는 기본 거부
+// ─────────────────────────────────────────────────────────────
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAdmin(userId) {
+      return request.auth != null
+        && request.auth.uid == userId
+        && request.auth.uid == "ADMIN_UID";
+    }
+
+    function data() {
+      return request.resource.data;
+    }
+
+    function isIsoDate(v) {
+      return v is string && v.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+    }
+
+    function optString(field, max) {
+      return !(field in data()) || (data()[field] is string && data()[field].size() <= max);
+    }
+
+    // 월별 자산 기록: 문서 ID = 날짜(YYYY-MM-DD), 금액은 정수(원)
+    function validAssetRecord(recordId) {
+      return isIsoDate(data().date)
+        && data().date == recordId
+        && data().isa is int
+        && data().brokerage is int
+        && data().crypto is int
+        && data().gold is int
+        && data().cash is int
+        && optString('memo', 1000);
+    }
+
+    function validHolding() {
+      return isIsoDate(data().snapshotDate)
+        && data().name is string && data().name.size() > 0 && data().name.size() <= 200
+        && data().marketValue is int && data().marketValue >= 0
+        && data().accountType in ['brokerage', 'isa']
+        && optString('symbol', 40)
+        && optString('memo', 1000);
+    }
+
+    function validComposition() {
+      return data().symbol is string && data().symbol.size() > 0 && data().symbol.size() <= 40
+        && isIsoDate(data().asOfDate)
+        && data().source is string && data().source.size() <= 500
+        && data().industries is map
+        && data().holdings is list && data().holdings.size() <= 500;
+    }
+
+    function validGoal() {
+      return data().targetYear is int
+        && data().targetYear >= 1900 && data().targetYear <= 2200
+        && data().targetAmount is int && data().targetAmount > 0;
+    }
+
+    match /users/{userId} {
+      // 상위 사용자 문서 자체는 사용하지 않음
+      allow read, write: if false;
+
+      match /assetRecords/{recordId} {
+        allow read, delete: if isAdmin(userId);
+        allow create, update: if isAdmin(userId) && validAssetRecord(recordId);
+      }
+
+      match /holdings/{holdingId} {
+        allow read, delete: if isAdmin(userId);
+        allow create, update: if isAdmin(userId) && validHolding();
+      }
+
+      match /etfCompositions/{compositionId} {
+        allow read, delete: if isAdmin(userId);
+        allow create, update: if isAdmin(userId) && validComposition();
+      }
+
+      match /goals/{goalId} {
+        allow read, delete: if isAdmin(userId);
+        allow create, update: if isAdmin(userId) && validGoal();
+      }
+
+      match /settings/{settingId} {
+        allow read, write: if isAdmin(userId) && settingId == 'general';
+      }
+    }
+
+    // 그 외 모든 경로는 규칙이 없으므로 자동으로 거부됩니다.
+  }
+}

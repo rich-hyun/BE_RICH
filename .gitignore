@@ -1,0 +1,43 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# 환경변수 / 비밀값 (절대 커밋 금지)
+.env
+.env.*
+.env.local
+!.env.example
+# 관리자 UID가 치환된 배포용 규칙 파일
+firestore.rules.generated
+.firebaserc
+firebase-debug.log*
+firestore-debug.log*
+# 서비스 계정 키 등
+*service-account*.json
+*-adminsdk-*.json
+# 개인 자산 데이터 파일
+*.xlsx
+*.xls
+*.csv
+be-rich-backup-*.json
