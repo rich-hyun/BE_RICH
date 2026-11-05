@@ -17,6 +17,7 @@ import { useData, firestoreErrorMessage } from '@/contexts/DataContext'
 import { useUi } from '@/contexts/UiContext'
 import { analyzePortfolio, snapshotDates } from '@/lib/portfolio'
 import { ACCOUNT_LABELS, HOLDING_TYPE_LABELS, type AccountType, type Holding } from '@/lib/types'
+import { useAuth } from '@/contexts/AuthContext'
 import { formatKDate, isValidISODate, todayKST } from '@/lib/date'
 
 function NewSnapshotDialog({ open, onOpenChange, from, onCreated }: { open: boolean; onOpenChange: (o: boolean) => void; from: { date: string; holdings: Holding[] } | null; onCreated: (d: string) => void }) {
@@ -89,6 +90,7 @@ function NewSnapshotDialog({ open, onOpenChange, from, onCreated }: { open: bool
 
 export default function PortfolioPage() {
   const { holdings, compositions, settings, deleteHoldings } = useData()
+  const { canEdit } = useAuth()
   const { confirm, toast } = useUi()
   const dates = useMemo(() => snapshotDates(holdings), [holdings])
   const [selected, setSelected] = useState<string | null>(null)
@@ -153,12 +155,16 @@ export default function PortfolioPage() {
               ))}
             </Select>
           )}
-          <Button variant="outline" onClick={() => setSnapOpen(true)}>
-            <CopyPlus /> 새 스냅샷
-          </Button>
-          <Button onClick={() => { setEditing(null); setFormOpen(true) }}>
-            <Plus /> 종목 추가
-          </Button>
+          {canEdit && (
+            <>
+              <Button variant="outline" onClick={() => setSnapOpen(true)}>
+                <CopyPlus /> 새 스냅샷
+              </Button>
+              <Button onClick={() => { setEditing(null); setFormOpen(true) }}>
+                <Plus /> 종목 추가
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -168,7 +174,7 @@ export default function PortfolioPage() {
           title="보유 종목이 없습니다"
           description="증권사 앱에서 확인한 종목별 평가금액을 입력하세요. 여러 종목을 한 번에 넣으려면 상단 ‘백업·내보내기 → JSON 복원’을 사용할 수 있습니다."
           action={
-            <div className="flex flex-wrap justify-center gap-2">
+            canEdit && <div className="flex flex-wrap justify-center gap-2">
               <Button onClick={() => { setEditing(null); setFormOpen(true) }}>
                 <Plus /> 종목 추가
               </Button>
@@ -190,7 +196,7 @@ export default function PortfolioPage() {
                   {current.length}개 종목 · 총 평가금액 <Money value={analysis.total} className="font-semibold text-foreground" />
                 </CardDescription>
               </div>
-              {current.length > 0 && (
+              {canEdit && current.length > 0 && (
                 <Button variant="ghost" size="sm" onClick={deleteSnapshot}>
                   <Trash2 /> 스냅샷 삭제
                 </Button>
@@ -236,12 +242,16 @@ export default function PortfolioPage() {
                                 </span>
                               </div>
                               <div className="flex">
-                                <Button variant="ghost" size="icon" aria-label="수정" onClick={() => { setEditing(h); setFormOpen(true) }}>
-                                  <Pencil />
-                                </Button>
-                                <Button variant="ghost" size="icon" aria-label="삭제" onClick={() => deleteOne(h)}>
-                                  <Trash2 />
-                                </Button>
+                                {canEdit && (
+                                  <>
+                                    <Button variant="ghost" size="icon" aria-label="수정" onClick={() => { setEditing(h); setFormOpen(true) }}>
+                                      <Pencil />
+                                    </Button>
+                                    <Button variant="ghost" size="icon" aria-label="삭제" onClick={() => deleteOne(h)}>
+                                      <Trash2 />
+                                    </Button>
+                                  </>
+                                )}
                               </div>
                             </li>
                           )

@@ -13,6 +13,7 @@ import { useUi } from '@/contexts/UiContext'
 import { formatKRW, formatPct } from '@/lib/format'
 import type { PortfolioAnalysis, Slice } from '@/lib/portfolio'
 import { QUALITY_LABELS, UNCLASSIFIED, isSemiIndustry } from '@/lib/types'
+import { useAuth } from '@/contexts/AuthContext'
 import { cn } from '@/lib/utils'
 
 function colorFor(s: Slice, i: number) {
@@ -316,6 +317,7 @@ export function ThemePanel({ a }: { a: PortfolioAnalysis }) {
 
 export function ConcentrationPanel({ a }: { a: PortfolioAnalysis }) {
   const { settings, updateSettings } = useData()
+  const { canEdit } = useAuth()
   const { toast } = useUi()
   const [th, setTh] = useState({ ...settings.riskThresholds })
   const c = a.concentration
@@ -362,11 +364,15 @@ export function ConcentrationPanel({ a }: { a: PortfolioAnalysis }) {
           <Field label="단일 국가 (%)">
             <Input inputMode="decimal" value={th.singleCountry} onChange={(e) => setTh({ ...th, singleCountry: Number(e.target.value.replace(/[^\d.]/g, '')) })} />
           </Field>
-          <div className="flex items-end">
-            <Button className="w-full" onClick={save}>
-              기준 저장
-            </Button>
-          </div>
+          {canEdit && (
+            <>
+              <div className="flex items-end">
+                <Button className="w-full" onClick={save}>
+                  기준 저장
+                </Button>
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
     </div>

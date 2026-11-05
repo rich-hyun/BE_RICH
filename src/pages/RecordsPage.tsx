@@ -12,10 +12,12 @@ import { useData, firestoreErrorMessage } from '@/contexts/DataContext'
 import { useUi } from '@/contexts/UiContext'
 import { computeRecords, type ComputedRecord } from '@/lib/assets'
 import { ASSET_KEYS, ASSET_LABELS, type AssetRecord } from '@/lib/types'
+import { useAuth } from '@/contexts/AuthContext'
 import { formatKDate, yearOf } from '@/lib/date'
 
 export default function RecordsPage() {
   const { records, deleteRecord } = useData()
+  const { canEdit } = useAuth()
   const { confirm, toast } = useUi()
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<AssetRecord | null>(null)
@@ -65,12 +67,16 @@ export default function RecordsPage() {
           <p className="mt-1 text-sm text-muted-foreground">날짜별 계좌 잔액을 기록합니다. 같은 달에 여러 번 기록하면 마지막 기록일이 그 달의 대표값이 됩니다.</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setImportOpen(true)}>
-            <FileSpreadsheet /> 엑셀 가져오기
-          </Button>
-          <Button onClick={openNew}>
-            <Plus /> 기록 추가
-          </Button>
+          {canEdit && (
+            <>
+              <Button variant="outline" onClick={() => setImportOpen(true)}>
+                <FileSpreadsheet /> 엑셀 가져오기
+              </Button>
+              <Button onClick={openNew}>
+                <Plus /> 기록 추가
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -128,7 +134,7 @@ export default function RecordsPage() {
               title="아직 자산 기록이 없습니다"
               description="첫 기록을 직접 입력하거나, 기존 ‘월별자산현황’ 엑셀 파일을 가져오세요."
               action={
-                <div className="flex gap-2">
+                canEdit && <div className="flex gap-2">
                   <Button variant="outline" onClick={() => setImportOpen(true)}>
                     <FileSpreadsheet /> 엑셀 가져오기
                   </Button>
@@ -188,12 +194,16 @@ export default function RecordsPage() {
                       </td>
                       <td className="px-2 py-3">
                         <div className="flex justify-end">
-                          <Button variant="ghost" size="icon" aria-label="수정" onClick={() => openEdit(r)}>
-                            <Pencil />
-                          </Button>
-                          <Button variant="ghost" size="icon" aria-label="삭제" onClick={() => onDelete(r)}>
-                            <Trash2 />
-                          </Button>
+                          {canEdit && (
+                            <>
+                              <Button variant="ghost" size="icon" aria-label="수정" onClick={() => openEdit(r)}>
+                                <Pencil />
+                              </Button>
+                              <Button variant="ghost" size="icon" aria-label="삭제" onClick={() => onDelete(r)}>
+                                <Trash2 />
+                              </Button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -221,12 +231,16 @@ export default function RecordsPage() {
                       </p>
                     </div>
                     <div className="flex">
-                      <Button variant="ghost" size="icon" aria-label="수정" onClick={() => openEdit(r)}>
-                        <Pencil />
-                      </Button>
-                      <Button variant="ghost" size="icon" aria-label="삭제" onClick={() => onDelete(r)}>
-                        <Trash2 />
-                      </Button>
+                      {canEdit && (
+                        <>
+                          <Button variant="ghost" size="icon" aria-label="수정" onClick={() => openEdit(r)}>
+                            <Pencil />
+                          </Button>
+                          <Button variant="ghost" size="icon" aria-label="삭제" onClick={() => onDelete(r)}>
+                            <Trash2 />
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </div>
                   <div className="mt-2 grid grid-cols-3 gap-x-3 gap-y-1 text-xs">

@@ -10,6 +10,7 @@ import { axisProps, gridProps, MoneyTooltip } from '@/components/charts'
 import { useData } from '@/contexts/DataContext'
 import { useUi } from '@/contexts/UiContext'
 import { simulate } from '@/lib/assets'
+import { useAuth } from '@/contexts/AuthContext'
 import { formatAmountInput, formatCompact, parseAmount } from '@/lib/format'
 
 const SCEN = [
@@ -20,10 +21,13 @@ const SCEN = [
 
 export function SimulationSection({ currentTotal }: { currentTotal: number }) {
   const { settings, updateSettings } = useData()
+  const { canEdit } = useAuth()
   const { toast } = useUi()
   const unit = useUnit()
   const saved = settings.simulation ?? { conservative: 3, base: 5, aggressive: 7 }
-  const [initial, setInitial] = useState(formatAmountInput(String(currentTotal)))
+  // 사용자가 직접 수정하기 전까지는 최신 자산 기록을 따라감 (기록 추가·수정 시 자동 반영)
+  const [initialOverride, setInitial] = useState<string | null>(null)
+  const initial = initialOverride ?? formatAmountInput(String(currentTotal))
   const [monthly, setMonthly] = useState('1,000,000')
   const [years, setYears] = useState('10')
   const [rates, setRates] = useState<Record<string, string>>({
@@ -74,7 +78,7 @@ export function SimulationSection({ currentTotal }: { currentTotal: number }) {
             <Input inputMode="numeric" value={years} onChange={(e) => setYears(e.target.value.replace(/\D/g, '').slice(0, 2))} />
           </Field>
           <div className="flex items-end">
-            <Button variant="outline" className="w-full" onClick={() => setInitial(formatAmountInput(String(currentTotal)))}>
+            <Button variant="outline" className="w-full" onClick={() => setInitial(null)}>
               현재 자산으로 초기화
             </Button>
           </div>
@@ -83,11 +87,15 @@ export function SimulationSection({ currentTotal }: { currentTotal: number }) {
               <Input inputMode="decimal" value={rates[s.key]} onChange={(e) => setRates({ ...rates, [s.key]: e.target.value.replace(/[^\d.-]/g, '') })} />
             </Field>
           ))}
-          <div className="flex items-end">
-            <Button variant="ghost" className="w-full" onClick={saveRates} disabled={!valid}>
-              수익률 가정 저장
-            </Button>
-          </div>
+          {canEdit && (
+            <>
+              <div className="flex items-end">
+                <Button variant="ghost" className="w-full" onClick={saveRates} disabled={!valid}>
+                  수익률 가정 저장
+                </Button>
+              </div>
+            </>
+          )}
         </div>
 
         {valid && last && (

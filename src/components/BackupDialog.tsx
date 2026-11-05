@@ -8,6 +8,7 @@ import { useData, firestoreErrorMessage } from '@/contexts/DataContext'
 import { useUi } from '@/contexts/UiContext'
 import { buildBackup, diffBackup, parseBackup, BackupError, type BackupData, type RestoreMode } from '@/lib/backup'
 import { downloadBlob } from '@/lib/utils'
+import { useAuth } from '@/contexts/AuthContext'
 import { todayKST } from '@/lib/date'
 
 const MODES: { value: RestoreMode; label: string; desc: string }[] = [
@@ -18,6 +19,7 @@ const MODES: { value: RestoreMode; label: string; desc: string }[] = [
 
 export function BackupDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const data = useData()
+  const { canEdit } = useAuth()
   const { toast, confirm } = useUi()
   const fileRef = useRef<HTMLInputElement>(null)
   const [pending, setPending] = useState<{ data: BackupData; skipped: number; fileName: string } | null>(null)
@@ -94,7 +96,7 @@ export function BackupDialog({ open, onOpenChange }: { open: boolean; onOpenChan
         <Tabs defaultValue="export">
           <TabsList className="w-full [&>button]:flex-1">
             <TabsTrigger value="export">내보내기</TabsTrigger>
-            <TabsTrigger value="restore">JSON 복원</TabsTrigger>
+            {canEdit && <TabsTrigger value="restore">JSON 복원</TabsTrigger>}
           </TabsList>
           <TabsContent value="export" className="flex flex-col gap-2">
             <Button

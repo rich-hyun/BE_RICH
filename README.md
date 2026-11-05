@@ -17,6 +17,7 @@
 |---|---|
 | **1. 월별 자산** (`#/records`) | 날짜별 ISA·일반계좌·암호화폐·금·현금 입력/수정/삭제, 총자산 자동 계산, 직전 기록 대비 증감(날짜순 자동 재계산), 연·월 필터와 정렬, 같은 날짜 덮어쓰기 확인, 엑셀 가져오기(미리보기·검증·중복 방지) |
 | **2. 추이·목표** (`#/dashboard`) | KPI 8종, 총자산 선 그래프(3개월~전체), 자산 유형별 누적 영역(표시/숨김), 월별 증감 막대(월 대표값 기준), 연도별 성장, 연도별 목표(달성률·부족액·남은 개월·월 필요 저축), 실제 vs 목표 그래프, 3가지 시나리오 미래 자산 시뮬레이션 |
+| **계정 관리** (`#/accounts`, 관리자 전용) | 아이디·초기 비밀번호로 계정 추가(처음엔 조회 전용), 계정별 수정 권한 스위치, 접근 권한 삭제 |
 | **3. 종목·비중** (`#/portfolio`) | 기준일별 보유 종목 스냅샷, 종목/계좌/국가/자산유형 도넛, ETF 내부 업종 비중 반영 업종 분석, **업종과 분리된** AI·반도체 테마 분석, 집중도(최대·상위3 종목, 국가 편중, 기업별 합산·ETF 간 중복), 사용자 정의 경고 기준, 월별 스냅샷 비교·추이, ETF 구성비 관리(기준일·출처·데이터 성격 기록), 월별 자산 기록과의 계좌 잔액 대조 |
 
 공통: 원/만원/억원 단위 전환, 라이트/다크 모드, PC 사이드바·모바일 하단 탭, 엑셀/CSV/JSON 내보내기, JSON 백업 복원(미리보기·병합/덮어쓰기 선택).
@@ -60,7 +61,11 @@ users/{uid}/holdings/{holdingId}        snapshotDate, accountType, symbol, name,
 users/{uid}/etfCompositions/{id}        symbol, name, asOfDate, source, quality, industries{업종:%}, holdings[…], updatedAt
 users/{uid}/goals/{goalId}              targetYear, targetAmount, memo, createdAt, updatedAt
 users/{uid}/settings/general            displayCurrency, riskThresholds, preferredChartRange, simulation
+members/{uid}                           username, canEdit, createdAt, updatedAt   (관리자가 등록한 계정)
 ```
+자산 데이터는 관리자 UID 경로(`users/{관리자UID}/…`) 하나만 사용하며, 등록 계정은 이 데이터를 함께 봅니다.
+로그인은 아이디로 합니다. 관리자 아이디(`VITE_ADMIN_USERNAME`, 기본 `jaehyun`)는 `VITE_ADMIN_EMAIL`로, 그 외 아이디는 `{아이디}@{authDomain}` 가상 이메일로 변환됩니다(메일 발송 없음).
+
 자산 기록의 문서 ID를 날짜로 사용하므로 같은 날짜 기록이 중복 생성되지 않고, 엑셀 재업로드 시에도 중복이 생기지 않습니다.
 
 ---
@@ -83,8 +88,9 @@ npm run rules:deploy   # 위 + Firebase에 보안 규칙 배포 (firebase login 
 | 항목 | 처리 방식 |
 |---|---|
 | 비밀번호 | 저장소·코드·환경변수 어디에도 없음. Firebase Authentication이 보관·검증 |
-| 회원가입 | 공개 회원가입 화면 없음. 관리자 계정은 Firebase 콘솔에서 1회 직접 생성 |
-| 다른 계정 | 화면에서 즉시 로그아웃 + Firestore 규칙이 서버에서 UID 불일치 거부 |
+| 회원가입 | 공개 회원가입 화면 없음. 관리자 계정은 Firebase 콘솔에서 1회 생성, 그 외 계정은 관리자가 ‘계정 관리’에서 추가 |
+| 권한 | 등록 계정은 기본 조회 전용, 관리자가 켠 경우에만 쓰기 허용. Firestore 규칙이 `members/{uid}.canEdit`를 서버에서 검사 |
+| 다른 계정 | 등록되지 않은 계정은 화면에서 즉시 로그아웃 + Firestore 규칙이 서버에서 거부 |
 | 로그인 유지 | 기본은 세션 유지(브라우저 닫으면 로그아웃). “로그인 유지” 체크 시에만 기기에 유지 |
 | 로그아웃 후 | 메모리의 데이터 즉시 삭제. 오프라인 디스크 캐시(IndexedDB)를 사용하지 않음 |
 | Firebase 웹 설정(apiKey 등) | 공개되어도 되는 클라이언트 식별값. GitHub Secrets로 주입하지만 빌드 결과에 포함됨 |

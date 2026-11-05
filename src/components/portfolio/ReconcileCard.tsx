@@ -8,6 +8,7 @@ import { useUi } from '@/contexts/UiContext'
 import { reconcile } from '@/lib/portfolio'
 import type { Holding } from '@/lib/types'
 import { formatKDate } from '@/lib/date'
+import { useAuth } from '@/contexts/AuthContext'
 import { formatKRW } from '@/lib/format'
 
 const LABEL = { isa: 'ISA계좌', brokerage: '일반계좌' } as const
@@ -15,6 +16,7 @@ const LABEL = { isa: 'ISA계좌', brokerage: '일반계좌' } as const
 /** 페이지 1(계좌 잔액)과 페이지 3(보유 종목 합계) 비교 — 같은 기준일일 때만 */
 export function ReconcileCard({ date, holdings }: { date: string; holdings: Holding[] }) {
   const { records, saveRecord } = useData()
+  const { canEdit } = useAuth()
   const { confirm, toast } = useUi()
   const record = records.find((r) => r.date === date) ?? null
   const result = reconcile(holdings, record)
@@ -78,12 +80,16 @@ export function ReconcileCard({ date, holdings }: { date: string; holdings: Hold
             {result.some((r) => r.diff < 0) && (
               <Notice tone="warning">보유 종목 합계가 계좌 잔액보다 큽니다. 입력값이나 기준일을 확인해 주세요.</Notice>
             )}
-            <div>
-              <Button variant="outline" size="sm" onClick={apply}>
-                보유 종목 합계로 월별 기록의 계좌 잔액 덮어쓰기…
-              </Button>
-              <p className="mt-1 text-[11px] text-muted-foreground">직접 선택하지 않는 한 월별 자산 기록은 변경되지 않습니다.</p>
-            </div>
+            {canEdit && (
+              <>
+                <div>
+                  <Button variant="outline" size="sm" onClick={apply}>
+                    보유 종목 합계로 월별 기록의 계좌 잔액 덮어쓰기…
+                  </Button>
+                  <p className="mt-1 text-[11px] text-muted-foreground">직접 선택하지 않는 한 월별 자산 기록은 변경되지 않습니다.</p>
+                </div>
+              </>
+            )}
           </div>
         )}
       </CardContent>

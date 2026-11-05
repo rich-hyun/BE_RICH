@@ -9,18 +9,42 @@ rules_version = '2';
 //
 // 원칙
 //  1) 로그인하지 않은 사용자: 읽기/쓰기 모두 거부
-//  2) 로그인했더라도 관리자 UID가 아니면 거부 (다른 Firebase 계정 차단)
-//  3) 경로의 {userId}와 로그인 UID가 같아야 함
-//  4) 아래에 명시하지 않은 모든 경로는 기본 거부
+//  2) 자산 데이터는 관리자 UID 경로(users/ADMIN_UID/...) 하나만 사용
+//  3) 관리자: 모든 데이터 읽기/쓰기 + 계정(members) 관리
+//  4) 관리자가 등록한 계정(members/{uid} 문서가 있는 계정): 읽기 가능,
+//     canEdit == true 일 때만 쓰기 가능. 그 외 Firebase 계정은 모두 거부
+//  5) 아래에 명시하지 않은 모든 경로는 기본 거부
 // ─────────────────────────────────────────────────────────────
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function isAdmin(userId) {
-      return request.auth != null
-        && request.auth.uid == userId
-        && request.auth.uid == "ADMIN_UID";
+    function isOwner() {
+      return request.auth != null && request.auth.uid == "ADMIN_UID";
+    }
+
+    function memberPath() {
+      return /databases/$(database)/documents/members/$(request.auth.uid);
+    }
+
+    function isMember() {
+      return request.auth != null && exists(memberPath());
+    }
+
+    function canRead(userId) {
+      return userId == "ADMIN_UID" && (isOwner() || isMember());
+    }
+
+    function canWrite(userId) {
+      return userId == "ADMIN_UID"
+        && (isOwner() || (isMember() && get(memberPath()).data.canEdit == true));
+    }
+
+    // 등록 계정: 아이디(영문 소문자 시작, 3~20자)와 수정 권한 여부
+    function validMember() {
+      return data().keys().hasOnly(['username', 'canEdit', 'createdAt', 'updatedAt'])
+        && data().username is string && data().username.matches('^[a-z][a-z0-9_]{2,19}$')
+        && data().canEdit is bool;
     }
 
     function data() {
@@ -75,28 +99,41 @@ service cloud.firestore {
       allow read, write: if false;
 
       match /assetRecords/{recordId} {
-        allow read, delete: if isAdmin(userId);
-        allow create, update: if isAdmin(userId) && validAssetRecord(recordId);
+        allow read: if canRead(userId);
+        allow delete: if canWrite(userId);
+        allow create, update: if canWrite(userId) && validAssetRecord(recordId);
       }
 
       match /holdings/{holdingId} {
-        allow read, delete: if isAdmin(userId);
-        allow create, update: if isAdmin(userId) && validHolding();
+        allow read: if canRead(userId);
+        allow delete: if canWrite(userId);
+        allow create, update: if canWrite(userId) && validHolding();
       }
 
       match /etfCompositions/{compositionId} {
-        allow read, delete: if isAdmin(userId);
-        allow create, update: if isAdmin(userId) && validComposition();
+        allow read: if canRead(userId);
+        allow delete: if canWrite(userId);
+        allow create, update: if canWrite(userId) && validComposition();
       }
 
       match /goals/{goalId} {
-        allow read, delete: if isAdmin(userId);
-        allow create, update: if isAdmin(userId) && validGoal();
+        allow read: if canRead(userId);
+        allow delete: if canWrite(userId);
+        allow create, update: if canWrite(userId) && validGoal();
       }
 
       match /settings/{settingId} {
-        allow read, write: if isAdmin(userId) && settingId == 'general';
+        allow read: if canRead(userId) && settingId == 'general';
+        allow write: if canWrite(userId) && settingId == 'general';
       }
+    }
+
+    match /members/{memberId} {
+      // 관리자는 전체 조회, 등록 계정은 자기 문서(권한)만 조회
+      allow read: if isOwner() || (request.auth != null && request.auth.uid == memberId);
+      // 계정 추가·권한 변경·삭제는 관리자만. 관리자 자신은 등록 대상이 아님
+      allow create, update: if isOwner() && memberId != "ADMIN_UID" && validMember();
+      allow delete: if isOwner();
     }
 
     // 그 외 모든 경로는 규칙이 없으므로 자동으로 거부됩니다.

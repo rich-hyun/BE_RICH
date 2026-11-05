@@ -8,10 +8,12 @@ import { CompositionDialog } from '@/components/portfolio/CompositionDialog'
 import { useData, firestoreErrorMessage } from '@/contexts/DataContext'
 import { useUi } from '@/contexts/UiContext'
 import { normSymbol } from '@/lib/portfolio'
+import { useAuth } from '@/contexts/AuthContext'
 import { QUALITY_LABELS, isEtfType, type EtfComposition } from '@/lib/types'
 
 export function CompositionsPanel() {
   const { compositions, holdings, deleteComposition } = useData()
+  const { canEdit } = useAuth()
   const { confirm, toast } = useUi()
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<EtfComposition | null>(null)
@@ -54,7 +56,7 @@ export function CompositionsPanel() {
           종목코드가 없는 ETF: <b>{missingSymbol.join(', ')}</b>. 보유 종목을 수정해 정확한 종목코드를 입력해야 ETF 구성비를 연결할 수 있습니다.
         </Notice>
       )}
-      {unregistered.length > 0 && (
+      {canEdit && unregistered.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle>구성비가 등록되지 않은 보유 ETF</CardTitle>
@@ -74,9 +76,13 @@ export function CompositionsPanel() {
             <CardTitle>ETF 구성비 데이터</CardTitle>
             <CardDescription>운용사 공개 자료를 직접 입력합니다. 같은 ETF에 여러 기준일 버전을 둘 수 있습니다.</CardDescription>
           </div>
-          <Button size="sm" onClick={() => openNew()}>
-            <Plus /> 구성비 등록
-          </Button>
+          {canEdit && (
+            <>
+              <Button size="sm" onClick={() => openNew()}>
+                <Plus /> 구성비 등록
+              </Button>
+            </>
+          )}
         </CardHeader>
         <CardContent>
           {grouped.length === 0 ? (
@@ -98,12 +104,16 @@ export function CompositionsPanel() {
                           기준일 {c.asOfDate} · 업종 {indSum.toFixed(1)}% 입력 · 구성종목 {c.holdings.length}개 · 출처: {c.source || '미기재'}
                         </p>
                       </div>
-                      <Button variant="ghost" size="icon" aria-label="수정" onClick={() => { setEditing(c); setPreset(null); setOpen(true) }}>
-                        <Pencil />
-                      </Button>
-                      <Button variant="ghost" size="icon" aria-label="삭제" onClick={() => onDelete(c)}>
-                        <Trash2 />
-                      </Button>
+                      {canEdit && (
+                        <>
+                          <Button variant="ghost" size="icon" aria-label="수정" onClick={() => { setEditing(c); setPreset(null); setOpen(true) }}>
+                            <Pencil />
+                          </Button>
+                          <Button variant="ghost" size="icon" aria-label="삭제" onClick={() => onDelete(c)}>
+                            <Trash2 />
+                          </Button>
+                        </>
+                      )}
                     </li>
                   )
                 }),

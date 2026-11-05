@@ -14,6 +14,7 @@ import { useData, firestoreErrorMessage } from '@/contexts/DataContext'
 import { useUi } from '@/contexts/UiContext'
 import { goalProgress, type MonthPoint } from '@/lib/assets'
 import type { Goal } from '@/lib/types'
+import { useAuth } from '@/contexts/AuthContext'
 import { formatAmountInput, formatCompact, parseAmount } from '@/lib/format'
 
 function GoalDialog({ open, onOpenChange, editing }: { open: boolean; onOpenChange: (o: boolean) => void; editing: Goal | null }) {
@@ -96,6 +97,7 @@ function GoalDialog({ open, onOpenChange, editing }: { open: boolean; onOpenChan
 
 export function GoalsSection({ months, current, today }: { months: MonthPoint[]; current: number | null; today: string }) {
   const { goals, deleteGoal } = useData()
+  const { canEdit } = useAuth()
   const { confirm, toast } = useUi()
   const unit = useUnit()
   const [open, setOpen] = useState(false)
@@ -129,15 +131,19 @@ export function GoalsSection({ months, current, today }: { months: MonthPoint[];
           <CardTitle>자산 목표</CardTitle>
           <CardDescription>필요 저축액은 수익률 0%를 가정한 단순 계산입니다.</CardDescription>
         </div>
-        <Button
-          size="sm"
-          onClick={() => {
-            setEditing(null)
-            setOpen(true)
-          }}
-        >
-          <Plus /> 목표 추가
-        </Button>
+        {canEdit && (
+          <>
+            <Button
+              size="sm"
+              onClick={() => {
+                setEditing(null)
+                setOpen(true)
+              }}
+            >
+              <Plus /> 목표 추가
+            </Button>
+          </>
+        )}
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {sorted.length === 0 ? (
@@ -164,12 +170,16 @@ export function GoalsSection({ months, current, today }: { months: MonthPoint[];
                       <Money value={p.goal.targetAmount} className="text-lg font-extrabold" />
                     </div>
                     <div className="flex">
-                      <Button variant="ghost" size="icon" aria-label="수정" onClick={() => { setEditing(p.goal); setOpen(true) }}>
-                        <Pencil />
-                      </Button>
-                      <Button variant="ghost" size="icon" aria-label="삭제" onClick={() => onDelete(p.goal)}>
-                        <Trash2 />
-                      </Button>
+                      {canEdit && (
+                        <>
+                          <Button variant="ghost" size="icon" aria-label="수정" onClick={() => { setEditing(p.goal); setOpen(true) }}>
+                            <Pencil />
+                          </Button>
+                          <Button variant="ghost" size="icon" aria-label="삭제" onClick={() => onDelete(p.goal)}>
+                            <Trash2 />
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </div>
                   <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">

@@ -12,6 +12,7 @@ import { firebaseReady } from '@/lib/firebase'
 const RecordsPage = lazy(() => import('@/pages/RecordsPage'))
 const DashboardPage = lazy(() => import('@/pages/DashboardPage'))
 const PortfolioPage = lazy(() => import('@/pages/PortfolioPage'))
+const AccountsPage = lazy(() => import('@/pages/AccountsPage'))
 
 function FullScreenSpinner({ label }: { label: string }) {
   return (
@@ -21,12 +22,19 @@ function FullScreenSpinner({ label }: { label: string }) {
   )
 }
 
-/** 인증 확인 전에는 아무 데이터도 렌더링하지 않고, 관리자가 아니면 로그인 화면으로 이동 */
+/** 인증 확인 전에는 아무 데이터도 렌더링하지 않고, 로그인하지 않았으면 로그인 화면으로 이동 */
 function RequireAdmin({ children }: { children: ReactNode }) {
   const { status } = useAuth()
   const location = useLocation()
   if (status === 'loading') return <FullScreenSpinner label="로그인 상태 확인 중…" />
-  if (status !== 'admin') return <Navigate to="/login" replace state={{ from: location.pathname }} />
+  if (status !== 'signedIn') return <Navigate to="/login" replace state={{ from: location.pathname }} />
+  return <>{children}</>
+}
+
+/** 관리자 전용 화면 */
+function RequireOwner({ children }: { children: ReactNode }) {
+  const { isOwner } = useAuth()
+  if (!isOwner) return <Navigate to="/records" replace />
   return <>{children}</>
 }
 
@@ -34,7 +42,7 @@ function LoginRoute() {
   const { status } = useAuth()
   if (status === 'loading') return <FullScreenSpinner label="로그인 상태 확인 중…" />
   // 로그인 성공 시 1페이지(월별 자산 관리)로 이동
-  if (status === 'admin') return <Navigate to="/records" replace />
+  if (status === 'signedIn') return <Navigate to="/records" replace />
   return <LoginPage />
 }
 
@@ -58,6 +66,7 @@ export default function App() {
                 <Route path="/records" element={<Suspense fallback={<FullScreenSpinner label="불러오는 중…" />}><RecordsPage /></Suspense>} />
                 <Route path="/dashboard" element={<Suspense fallback={<FullScreenSpinner label="불러오는 중…" />}><DashboardPage /></Suspense>} />
                 <Route path="/portfolio" element={<Suspense fallback={<FullScreenSpinner label="불러오는 중…" />}><PortfolioPage /></Suspense>} />
+                <Route path="/accounts" element={<RequireOwner><Suspense fallback={<FullScreenSpinner label="불러오는 중…" />}><AccountsPage /></Suspense></RequireOwner>} />
               </Route>
               <Route path="*" element={<Navigate to="/records" replace />} />
             </Routes>

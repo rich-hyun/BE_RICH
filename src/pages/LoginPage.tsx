@@ -1,15 +1,14 @@
 import { useState, type FormEvent } from 'react'
-import { Eye, EyeOff, Lock, TrendingUp } from 'lucide-react'
+import { Eye, EyeOff, Lock, TrendingUp, User } from 'lucide-react'
 import { loginErrorMessage, useAuth } from '@/contexts/AuthContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/misc'
-import { ADMIN_EMAIL } from '@/lib/firebase'
 
 export function LoginPage() {
   const { login, forbiddenReason } = useAuth()
   const [password, setPassword] = useState('')
-  const [email, setEmail] = useState('')
+  const [username, setUsername] = useState('')
   const [show, setShow] = useState(false)
   const [remember, setRemember] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -18,8 +17,8 @@ export function LoginPage() {
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault()
     if (busy) return
-    if (!ADMIN_EMAIL && !email.trim()) {
-      setError('이메일을 입력해 주세요.')
+    if (!username.trim()) {
+      setError('아이디를 입력해 주세요.')
       return
     }
     if (!password) {
@@ -29,7 +28,7 @@ export function LoginPage() {
     setBusy(true)
     setError(null)
     try {
-      await login(password, remember, email)
+      await login(username, password, remember)
       setPassword('')
     } catch (err) {
       setError(loginErrorMessage(err))
@@ -47,31 +46,29 @@ export function LoginPage() {
           </div>
           <div>
             <h1 className="text-xl font-extrabold">BE RICH</h1>
-            <p className="mt-1 text-sm text-muted-foreground">개인 자산관리 · 관리자 전용</p>
+            <p className="mt-1 text-sm text-muted-foreground">개인 자산관리</p>
           </div>
         </div>
 
-        {ADMIN_EMAIL ? (
-          // 비밀번호 관리자 호환용 숨김 사용자명 필드 (값은 공개 가능한 관리자 이메일)
-          <input type="email" name="username" autoComplete="username" value={ADMIN_EMAIL} readOnly hidden />
-        ) : (
-          <div className="mb-4">
-            <label htmlFor="email" className="mb-1.5 block text-xs font-semibold text-muted-foreground">
-              관리자 이메일
-            </label>
-            <Input
-              id="email"
-              name="username"
-              type="email"
-              autoComplete="username"
-              inputMode="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="h-12 text-base"
-              disabled={busy}
-            />
-          </div>
-        )}
+        <label htmlFor="username" className="mb-1.5 block text-xs font-semibold text-muted-foreground">
+          아이디
+        </label>
+        <div className="relative mb-4">
+          <User className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            id="username"
+            name="username"
+            autoComplete="username"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            autoFocus
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            className="h-12 pl-9 text-base"
+            disabled={busy}
+          />
+        </div>
 
         <label htmlFor="password" className="mb-1.5 block text-xs font-semibold text-muted-foreground">
           비밀번호
@@ -83,7 +80,6 @@ export function LoginPage() {
             name="password"
             type={show ? 'text' : 'password'}
             autoComplete="current-password"
-            autoFocus
             enterKeyHint="go"
             value={password}
             onChange={(e) => setPassword(e.target.value)}

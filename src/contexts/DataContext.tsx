@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { collection, doc, onSnapshot, setDoc, writeBatch, type DocumentData, type WriteBatch } from 'firebase/firestore'
+import { collection, deleteDoc, doc, onSnapshot, setDoc, updateDoc, writeBatch, type DocumentData, type WriteBatch } from 'firebase/firestore'
 import { FirebaseError } from 'firebase/app'
-import { getFirebase } from '@/lib/firebase'
+import { createAuthAccount, getFirebase, usernameToEmail } from '@/lib/firebase'
 import { useAuth } from './AuthContext'
 import { DEFAULT_SETTINGS, type AssetRecord, type EtfComposition, type Goal, type Holding, type Settings } from '@/lib/types'
 import { toAssetRecord, toComposition, toGoal, toHolding, toSettings } from '@/lib/sanitize'
@@ -36,14 +36,33 @@ interface DataValue {
   updateSettings: (patch: Partial<Settings>) => Promise<void>
   // 백업
   restore: (data: BackupData, mode: RestoreMode, includeSettings: boolean) => Promise<void>
+  // 계정 관리 (관리자 전용)
+  members: Member[]
+  createMember: (username: string, password: string) => Promise<void>
+  setMemberCanEdit: (uid: string, canEdit: boolean) => Promise<void>
+  removeMember: (uid: string) => Promise<void>
 }
+
+export interface Member {
+  uid: string
+  username: string
+  canEdit: boolean
+  createdAt: number
+}
+
+export const READ_ONLY_MESSAGE = '조회 전용 계정입니다. 수정하려면 관리자에게 수정 권한을 요청하세요.'
+/** 화면 표시용 설정: 관리자가 아닌 계정은 공유 설정에 저장하지 않고 이 기기 화면에만 적용 */
+const VIEW_PREF_KEYS: (keyof Settings)[] = ['displayCurrency', 'preferredChartRange']
 
 const DataContext = createContext<DataValue | null>(null)
 
 export function firestoreErrorMessage(e: unknown): string {
   const code = e instanceof FirebaseError ? e.code : ''
   if (code === 'permission-denied')
-    return '데이터 접근 권한이 없습니다. Firestore 보안 규칙의 관리자 UID 설정을 확인해 주세요.'
+    return '권한이 없습니다. 조회 전용 계정이거나 Firestore 보안 규칙이 최신이 아닐 수 있습니다.'
+  if (code === 'auth/email-already-in-use') return '이미 사용 중인 아이디입니다.'
+  if (code === 'auth/weak-password') return '비밀번호는 6자 이상이어야 합니다.'
+  if (code === 'auth/invalid-email') return '사용할 수 없는 아이디입니다.'
   if (code === 'unavailable') return '서버에 연결할 수 없습니다. 네트워크 상태를 확인해 주세요.'
   if (code === 'resource-exhausted') return 'Firebase 무료 사용 한도를 초과했습니다. 내일 다시 시도해 주세요.'
   return e instanceof Error ? e.message : '알 수 없는 오류가 발생했습니다.'
@@ -63,13 +82,15 @@ function clean<T extends object>(o: T): DocumentData {
 const BATCH_LIMIT = 450
 
 export function DataProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth()
-  const uid = user?.uid ?? null
+  const { dataUid: uid, canEdit, isOwner } = useAuth()
   const [records, setRecords] = useState<AssetRecord[]>([])
   const [holdings, setHoldings] = useState<Holding[]>([])
   const [compositions, setCompositions] = useState<EtfComposition[]>([])
   const [goals, setGoals] = useState<Goal[]>([])
-  const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
+  const [sharedSettings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
+  const [localPrefs, setLocalPrefs] = useState<Partial<Settings>>({})
+  const settings = useMemo(() => ({ ...sharedSettings, ...localPrefs }), [sharedSettings, localPrefs])
+  const [members, setMembers] = useState<Member[]>([])
   const [loaded, setLoaded] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
 
@@ -80,6 +101,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setCompositions([])
     setGoals([])
     setSettings(DEFAULT_SETTINGS)
+    setLocalPrefs({})
+    setMembers([])
     setLoaded(new Set())
     setError(null)
     if (!uid) return
@@ -114,13 +137,30 @@ export function DataProvider({ children }: { children: ReactNode }) {
         onErr,
       ),
     ]
+    if (isOwner)
+      unsubs.push(
+        onSnapshot(
+          collection(db, 'members'),
+          (snap) => {
+            const list: Member[] = []
+            snap.forEach((d) => {
+              const v = d.data()
+              list.push({ uid: d.id, username: String(v.username ?? ''), canEdit: v.canEdit === true, createdAt: Number(v.createdAt) || 0 })
+            })
+            setMembers(list.sort((a, b) => a.createdAt - b.createdAt))
+          },
+          onErr,
+        ),
+      )
     return () => unsubs.forEach((u) => u())
-  }, [uid])
+  }, [uid, isOwner])
 
   const requireUid = useCallback(() => {
     if (!uid) throw new Error('로그인이 필요합니다.')
+    // 화면에서 버튼을 숨기는 것과 별개로 쓰기 직전에 한 번 더 막음 (최종 차단은 Firestore 규칙)
+    if (!canEdit) throw new Error(READ_ONLY_MESSAGE)
     return uid
-  }, [uid])
+  }, [uid, canEdit])
 
   const commitInChunks = useCallback(async (ops: ((b: WriteBatch) => void)[]) => {
     const { db } = getFirebase()
@@ -206,7 +246,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
       },
 
       async updateSettings(patch) {
-        const next = { ...settings, ...patch }
+        if (!isOwner) {
+          // 관리자가 아닌 계정: 단위·기간 같은 화면 설정은 이 기기에만 적용하고, 나머지는 수정 권한이 있어야 저장
+          const view = Object.fromEntries(Object.entries(patch).filter(([k]) => VIEW_PREF_KEYS.includes(k as keyof Settings)))
+          const rest = Object.fromEntries(Object.entries(patch).filter(([k]) => !VIEW_PREF_KEYS.includes(k as keyof Settings)))
+          setLocalPrefs((p) => ({ ...p, ...view }))
+          if (Object.keys(rest).length === 0) return
+          requireUid()
+          setSettings((s) => ({ ...s, ...rest }))
+          await setDoc(ref('settings', 'general'), clean(rest), { merge: true })
+          return
+        }
+        const next = { ...sharedSettings, ...patch }
         setSettings(next) // 즉시 반영 (낙관적 업데이트)
         await setDoc(ref('settings', 'general'), clean(next), { merge: true })
       },
@@ -233,8 +284,29 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (includeSettings) ops.push((b) => b.set(ref('settings', 'general'), clean(data.settings)))
         await commitInChunks(ops)
       },
+
+      members,
+      async createMember(username, password) {
+        if (!isOwner) throw new Error('관리자만 계정을 추가할 수 있습니다.')
+        const id = username.trim().toLowerCase()
+        const newUid = await createAuthAccount(usernameToEmail(id), password)
+        try {
+          // 처음 등록된 계정은 조회만 가능
+          await setDoc(doc(getFirebase().db, 'members', newUid), { username: id, canEdit: false, createdAt: now(), updatedAt: now() })
+        } catch (e) {
+          throw new Error(`로그인 계정은 만들어졌지만 권한 등록에 실패했습니다 (${firestoreErrorMessage(e)}). Firestore 규칙을 배포한 뒤 Firebase 콘솔에서 해당 사용자를 삭제하고 다시 추가하세요.`, { cause: e })
+        }
+      },
+      async setMemberCanEdit(memberUid, value) {
+        if (!isOwner) throw new Error('관리자만 권한을 변경할 수 있습니다.')
+        await updateDoc(doc(getFirebase().db, 'members', memberUid), { canEdit: value, updatedAt: now() })
+      },
+      async removeMember(memberUid) {
+        if (!isOwner) throw new Error('관리자만 계정을 삭제할 수 있습니다.')
+        await deleteDoc(doc(getFirebase().db, 'members', memberUid))
+      },
     }
-  }, [uid, loaded, error, records, holdings, compositions, goals, settings, requireUid, commitInChunks])
+  }, [uid, loaded, error, records, holdings, compositions, goals, settings, sharedSettings, members, isOwner, requireUid, commitInChunks])
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>
 }

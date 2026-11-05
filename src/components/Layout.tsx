@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
-import { CalendarDays, LineChart, PieChart, LogOut, Moon, Sun, DatabaseBackup, TrendingUp } from 'lucide-react'
+import { CalendarDays, LineChart, PieChart, LogOut, Moon, Sun, DatabaseBackup, TrendingUp, Users, Eye } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useData } from '@/contexts/DataContext'
 import { useUi } from '@/contexts/UiContext'
@@ -23,7 +23,8 @@ const UNIT_OPTIONS: { value: DisplayUnit; label: string }[] = [
 ]
 
 export function Layout() {
-  const { logout } = useAuth()
+  const { logout, isOwner, canEdit, username, role } = useAuth()
+  const nav = isOwner ? [...NAV, { to: '/accounts', label: '계정 관리', icon: Users }] : NAV
   const { settings, updateSettings, loading, error } = useData()
   const { theme, toggleTheme, confirm, toast } = useUi()
   const [backupOpen, setBackupOpen] = useState(false)
@@ -46,7 +47,7 @@ export function Layout() {
           <span className="text-lg font-extrabold tracking-tight">BE RICH</span>
         </div>
         <nav className="flex flex-col gap-1">
-          {NAV.map((n) => (
+          {nav.map((n) => (
             <NavLink
               key={n.to}
               to={n.to}
@@ -63,6 +64,9 @@ export function Layout() {
           ))}
         </nav>
         <div className="mt-auto flex flex-col gap-3 px-1">
+          <p className="px-2 text-xs text-muted-foreground">
+            <b className="text-foreground">{username}</b> · {role === 'owner' ? '관리자' : role === 'editor' ? '수정 가능' : '조회 전용'}
+          </p>
           <div>
             <p className="mb-1.5 px-2 text-[11px] font-semibold text-muted-foreground">금액 단위</p>
             <Segmented value={settings.displayCurrency} onChange={setUnit} options={UNIT_OPTIONS} className="w-full [&>button]:flex-1" />
@@ -100,6 +104,12 @@ export function Layout() {
       </header>
 
       <main className="mx-auto max-w-6xl px-4 pb-28 pt-5 md:px-8 md:pb-12 md:pt-8">
+        {!canEdit && (
+          <Notice className="mb-4">
+            <Eye className="mr-1 inline size-4 align-[-3px]" />
+            <b>조회 전용 계정</b>입니다. 기록을 볼 수만 있으며, 수정하려면 관리자에게 수정 권한을 요청하세요.
+          </Notice>
+        )}
         {error && (
           <Notice tone="danger" className="mb-4">
             {error}
@@ -115,8 +125,8 @@ export function Layout() {
       </main>
 
       {/* 모바일 하단 탭 */}
-      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-3 border-t bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
-        {NAV.map((n) => (
+      <nav style={{ gridTemplateColumns: `repeat(${nav.length}, minmax(0, 1fr))` }} className="fixed inset-x-0 bottom-0 z-30 grid border-t bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
+        {nav.map((n) => (
           <NavLink
             key={n.to}
             to={n.to}
