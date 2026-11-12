@@ -11,6 +11,7 @@ rules_version = '2';
 //  1) 로그인하지 않은 사용자: 읽기/쓰기 모두 거부
 //  2) 자산 데이터는 관리자 UID 경로(users/ADMIN_UID/...) 하나만 사용
 //  3) 관리자: 모든 데이터 읽기/쓰기 + 계정(members) 관리
+//  3-1) 백업·복원 관련 데이터(변경 이력, 마지막 백업 시각, 계정 목록)는 관리자만 조회 가능
 //  4) 관리자가 등록한 계정(members/{uid} 문서가 있는 계정): 읽기 가능,
 //     canEdit == true 일 때만 쓰기 가능. 그 외 Firebase 계정은 모두 거부
 //  5) 아래에 명시하지 않은 모든 경로는 기본 거부
@@ -88,6 +89,17 @@ service cloud.firestore {
         && data().holdings is list && data().holdings.size() <= 500;
     }
 
+    // 변경 이력(수정·삭제 직전 문서 보존): 추가 전용, 내용 변경 불가
+    function validHistory() {
+      return data().keys().hasOnly(['collection', 'docId', 'action', 'label', 'data', 'savedAt'])
+        && data().collection in ['assetRecords', 'holdings', 'etfCompositions', 'goals', 'settings']
+        && data().docId is string && data().docId.size() > 0 && data().docId.size() <= 200
+        && data().action in ['update', 'delete']
+        && data().label is string && data().label.size() <= 200
+        && data().data is map
+        && data().savedAt is int;
+    }
+
     function validGoal() {
       return data().targetYear is int
         && data().targetYear >= 1900 && data().targetYear <= 2200
@@ -120,6 +132,22 @@ service cloud.firestore {
         allow read: if canRead(userId);
         allow delete: if canWrite(userId);
         allow create, update: if canWrite(userId) && validGoal();
+      }
+
+      // 변경 이력: 기록(추가)은 쓰기 권한이 있는 계정의 수정·삭제와 함께 이뤄지지만,
+      // 조회·삭제는 관리자만 가능하고 한번 기록된 이력은 수정할 수 없음
+      match /history/{historyId} {
+        allow read, delete: if isOwner() && userId == "ADMIN_UID";
+        allow create: if canWrite(userId) && validHistory();
+        allow update: if false;
+      }
+
+      // 백업 메타(마지막 백업 시각): 관리자 전용
+      match /meta/{metaId} {
+        allow read: if isOwner() && userId == "ADMIN_UID" && metaId == 'backup';
+        allow write: if isOwner() && userId == "ADMIN_UID" && metaId == 'backup'
+          && request.resource.data.keys().hasOnly(['lastBackupAt'])
+          && request.resource.data.lastBackupAt is int;
       }
 
       match /settings/{settingId} {

@@ -25,7 +25,8 @@ const UNIT_OPTIONS: { value: DisplayUnit; label: string }[] = [
 export function Layout() {
   const { logout, isOwner, canEdit, username, role } = useAuth()
   const nav = isOwner ? [...NAV, { to: '/accounts', label: '계정 관리', icon: Users }] : NAV
-  const { settings, updateSettings, loading, error } = useData()
+  const { settings, updateSettings, loading, error, lastBackupAt } = useData()
+  const backupStale = isOwner && lastBackupAt !== undefined && (lastBackupAt === null || Date.now() - lastBackupAt > 35 * 86400000)
   const { theme, toggleTheme, confirm, toast } = useUi()
   const [backupOpen, setBackupOpen] = useState(false)
 
@@ -71,9 +72,12 @@ export function Layout() {
             <p className="mb-1.5 px-2 text-[11px] font-semibold text-muted-foreground">금액 단위</p>
             <Segmented value={settings.displayCurrency} onChange={setUnit} options={UNIT_OPTIONS} className="w-full [&>button]:flex-1" />
           </div>
-          <Button variant="ghost" className="justify-start" onClick={() => setBackupOpen(true)}>
-            <DatabaseBackup /> 백업·내보내기
-          </Button>
+          {isOwner && (
+            <Button variant="ghost" className="justify-start" onClick={() => setBackupOpen(true)}>
+              <DatabaseBackup /> 백업·복원
+              {backupStale && <span className="ml-auto rounded-full bg-amber-500 px-1.5 text-[10px] font-semibold text-white">백업 필요</span>}
+            </Button>
+          )}
           <Button variant="ghost" className="justify-start" onClick={toggleTheme}>
             {theme === 'dark' ? <Sun /> : <Moon />} {theme === 'dark' ? '라이트 모드' : '다크 모드'}
           </Button>
@@ -91,9 +95,12 @@ export function Layout() {
         <span className="font-extrabold">BE RICH</span>
         <div className="ml-auto flex items-center gap-1">
           <Segmented size="xs" value={settings.displayCurrency} onChange={setUnit} options={UNIT_OPTIONS} />
-          <Button variant="ghost" size="icon" aria-label="백업" onClick={() => setBackupOpen(true)}>
-            <DatabaseBackup />
-          </Button>
+          {isOwner && (
+            <Button variant="ghost" size="icon" aria-label="백업" className="relative" onClick={() => setBackupOpen(true)}>
+              <DatabaseBackup />
+              {backupStale && <span className="absolute right-1 top-1 size-2 rounded-full bg-amber-500" />}
+            </Button>
+          )}
           <Button variant="ghost" size="icon" aria-label="테마 전환" onClick={toggleTheme}>
             {theme === 'dark' ? <Sun /> : <Moon />}
           </Button>
@@ -140,7 +147,7 @@ export function Layout() {
         ))}
       </nav>
 
-      <BackupDialog open={backupOpen} onOpenChange={setBackupOpen} />
+      {isOwner && <BackupDialog open={backupOpen} onOpenChange={setBackupOpen} />}
     </div>
   )
 }
